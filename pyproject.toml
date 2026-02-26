@@ -1,7 +1,7 @@
 [project]
 name = "structflo-cser"
-version = "0.1.0"
-description = "YOLO-based chemical structure + label detector with synthetic data generation"
+version = "0.2.0"
+description = "Chemical structure-label pair extraction from scientific documents."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
