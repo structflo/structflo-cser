@@ -109,7 +109,10 @@ class RelationalMatcher(BaseMatcher):
         for r, c in zip(row_ind, col_ind):
             prob = float(np.exp(core[r, c]))
             # accept if the match beats this structure's dustbin (within margin) and floor
-            if core[r, c] >= dust_col[r] - self.dustbin_margin and prob >= self.min_score:
+            if (
+                core[r, c] >= dust_col[r] - self.dustbin_margin
+                and prob >= self.min_score
+            ):
                 pairs.append(
                     CompoundPair(
                         structure=structures[r],
