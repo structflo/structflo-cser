@@ -38,7 +38,7 @@ sf-eval-lps             = "structflo.cser.lps.evaluate:main"
 sf-train-relmatch       = "structflo.cser.relmatch.train:main"
 
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling<1.28", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [tool.hatch.version]
