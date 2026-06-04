@@ -85,6 +85,13 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "sha256": "b45ec5c0f1b2919a6bdda52051800f5610d9008f1ad7b3db5041fa222abb8626",
             "requires": ">=0.1.0,<1.0.0",
         },
+        "v0.4": {
+            "repo_id": "sidxz/structflo-cser-detector",
+            "filename": "best.pt",
+            "revision": "weights-v0.4",
+            "sha256": "6ec488e8a2263a8fcf6f8259dab622d66aea3c970d1b48b253f9ed860ae90e33",
+            "requires": ">=0.4.0,<1.0.0",
+        },
     },
     "cser-lps": {
         # Populate after first training run and HF Hub publish:
@@ -109,6 +116,13 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "sha256": "67d8c129645415ecf19aa62ac818ee894cdc0b70519ff67d1c84a73152ca11e6",
             "requires": ">=0.1.0,<1.0.0",
         },
+        "v0.3": {
+            "repo_id": "sidxz/structflo-cser-lps",
+            "filename": "best.pt",
+            "revision": "weights-v0.3",
+            "sha256": "3c5914e8798e9195820eda92c87824c53fb05a81fff690828388416331eaa531",
+            "requires": ">=0.4.0,<1.0.0",
+        },
     },
     # Relational (set-to-set / Sinkhorn) matcher (det-trained variant).
     "cser-relmatcher": {
@@ -119,15 +133,22 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "sha256": "1493d138e71a56e2f7a553d869bd458a65315a1186ea568a7a797f81aa7efa7f",
             "requires": ">=0.3.0,<1.0.0",
         },
+        "v0.2": {
+            "repo_id": "sidxz/structflo-cser-relmatcher",
+            "filename": "best.pt",
+            "revision": "weights-v0.2",
+            "sha256": "2d48c42c3b0180889a57c94986f99a4cf391b27efd6c91e2816a9e5e7f839d28",
+            "requires": ">=0.4.0,<1.0.0",
+        },
     },
 }
 
 # The version resolved when the caller does not specify one.
 # Keep in sync with REGISTRY — point to the newest entry per model.
 LATEST: dict[str, str | None] = {
-    "cser-detector": "v0.3",
-    "cser-lps": "v0.2",  # set to "v1.0" after first publish
-    "cser-relmatcher": "v0.1",
+    "cser-detector": "v0.4",
+    "cser-lps": "v0.3",  # set to "v1.0" after first publish
+    "cser-relmatcher": "v0.2",
 }
 
 
