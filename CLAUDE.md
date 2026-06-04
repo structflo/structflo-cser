@@ -144,10 +144,15 @@ ChemPipeline.to_records(pairs)
 Weights are versioned independently of the package and stored on HuggingFace Hub.
 `structflo.cser.weights.resolve_weights(model, version)` handles auto-download + caching.
 
-| Model          | HF Repo                         | Latest |
-|----------------|----------------------------------|--------|
-| cser-detector  | sidxz/structflo-cser-detector   | v0.2   |
-| cser-lps       | sidxz/structflo-cser-lps        | v0.1   |
+| Model           | HF Repo                          | Latest |
+|-----------------|----------------------------------|--------|
+| cser-detector   | sidxz/structflo-cser-detector    | v0.4   |
+| cser-lps        | sidxz/structflo-cser-lps         | v0.3   |
+| cser-relmatcher | sidxz/structflo-cser-relmatcher  | v0.2   |
+
+v0.4 / v0.3 / v0.2 were trained on the 914-doc real corpus (the original 830 + 84 newly
+annotated docs, of which 60 complete). Earlier releases: detector v0.3 / lps v0.2 / relmatcher v0.1
+(830-doc corpus).
 
 Publish script: `scripts/publish_weights.py`
 
