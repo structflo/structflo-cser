@@ -10,15 +10,18 @@
 set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
-CHECKPOINT="$PROJECT_ROOT/runs/labels_detect/yolo11l_panels/weights/best.pt"
 OUT_DIR="$PROJECT_ROOT/runs/labels_detect"
 
 # Overridable via env vars (defaults reproduce the original trial run).
+# CHECKPOINT = base model to warm-start from (per-seed base for seed isolation).
+# SEED varies init/shuffle/augmentation only — data splits stay fixed.
+CHECKPOINT="${CHECKPOINT:-$PROJECT_ROOT/runs/labels_detect/yolo11l_panels/weights/best.pt}"
 DATA_YAML="${DATA_YAML:-$PROJECT_ROOT/data/finetune/yolo/data.yaml}"
 RUN_NAME="${RUN_NAME:-finetune_trial}"
 EPOCHS="${EPOCHS:-10}"
 PATIENCE="${PATIENCE:-5}"
 MOSAIC="${MOSAIC:-0.5}"
+SEED="${SEED:-42}"
 
 if [ ! -f "$DATA_YAML" ]; then
     echo "ERROR: $DATA_YAML not found. Run prepare_data.py first."
@@ -35,6 +38,7 @@ echo "  Data:       $DATA_YAML"
 echo "  Checkpoint: $CHECKPOINT"
 echo "  Run name:   $RUN_NAME"
 echo "  Epochs:     $EPOCHS  (patience $PATIENCE, mosaic $MOSAIC)"
+echo "  Seed:       $SEED"
 echo ""
 
 uv run python -c "
@@ -71,7 +75,7 @@ model.train(
     project='$OUT_DIR',
     name='$RUN_NAME',
     exist_ok=True,
-    seed=42,
+    seed=$SEED,
     plots=True,
     save_period=5,
 )

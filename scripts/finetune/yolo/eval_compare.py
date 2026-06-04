@@ -39,7 +39,11 @@ def _val(weights: Path, data_yaml: Path) -> dict[str, float] | None:
         return None
 
     model = YOLO(str(weights))
-    m = model.val(data=str(data_yaml), verbose=False)
+    # Pin inference resolution so the baseline (trained @2048) and the
+    # fine-tuned model (trained @1280) are compared at the same deployment
+    # resolution. Without this, model.val() silently uses each checkpoint's own
+    # training imgsz, confounding the fine-tuning effect with a resolution change.
+    m = model.val(data=str(data_yaml), imgsz=1280, verbose=False)
 
     return {
         "mAP50": m.box.map50,

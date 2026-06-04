@@ -17,6 +17,8 @@ def train(
     batch: int = 8,
     epochs: int = 50,
     resume: str | None = None,
+    seed: int = 42,
+    name: str = "yolo11l_panels",
 ) -> None:
     model = YOLO(resume if resume else weights)
 
@@ -48,15 +50,15 @@ def train(
         cache="disk",  # preprocess once, reuse across epochs
         workers=8,
         project=str(RUNS_DIR),
-        name="yolo11l_panels",
+        name=name,
         exist_ok=False,
-        seed=42,
+        seed=seed,  # vary across reproducibility seeds; data splits stay fixed
         plots=True,
         save_period=25,  # checkpoint every 25 epochs as backup
         resume=bool(resume),
     )
 
-    best = RUNS_DIR / "yolo11l_panels" / "weights" / "best.pt"
+    best = RUNS_DIR / name / "weights" / "best.pt"
     if best.exists():
         m = YOLO(str(best)).val(data=str(DATA_YAML))
         print("\n--- Best model metrics ---")
@@ -85,6 +87,17 @@ def main() -> None:
     p.add_argument(
         "--resume", default=None, help="Path to last.pt to resume an interrupted run"
     )
+    p.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Training RNG seed (init/shuffle/augmentation). Does NOT change data splits.",
+    )
+    p.add_argument(
+        "--name",
+        default="yolo11l_panels",
+        help="Run name under runs/labels_detect/ (vary per seed, e.g. yolo11l_panels_s43)",
+    )
     args = p.parse_args()
 
     if args.imgsz > 1280 and args.batch > 8:
@@ -93,7 +106,15 @@ def main() -> None:
             f"Consider --batch 8."
         )
 
-    train(args.weights, args.imgsz, args.batch, args.epochs, args.resume)
+    train(
+        args.weights,
+        args.imgsz,
+        args.batch,
+        args.epochs,
+        args.resume,
+        seed=args.seed,
+        name=args.name,
+    )
 
 
 if __name__ == "__main__":

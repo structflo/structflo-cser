@@ -40,6 +40,8 @@ Thumbs.db
 runs/
 detections/
 archive/
+# Zenodo reproducibility bundle (weights + synth test set; upload, don't commit)
+repro_release/
 
 # ── Project: datasets & generated data ───────────────────────────────────────
 /data/
