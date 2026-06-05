@@ -66,6 +66,8 @@ class LearnedMatcher(BaseMatcher):
         self.min_score = min_score
         self.max_dist_px = max_dist_px
         self._device = torch.device(device if torch.cuda.is_available() else "cpu")
+        self._weights = weights  # version tag, local path, or None (→ latest)
+        self._weights_path: str | None = None
         self._model = self._load(weights)
 
     # ------------------------------------------------------------------
@@ -76,9 +78,17 @@ class LearnedMatcher(BaseMatcher):
         from structflo.cser.weights import resolve_weights
 
         path = resolve_weights("cser-lps", version=weights)
+        self._weights_path = str(path)
         model, _ = load_checkpoint(path, device=str(self._device))
         model.eval()
         return model
+
+    def weight_descriptor(self) -> dict:
+        from structflo.cser.weights import weight_info
+
+        info = weight_info("cser-lps", self._weights)
+        info["path"] = self._weights_path
+        return info
 
     def _page_size(
         self,

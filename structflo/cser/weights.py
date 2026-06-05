@@ -270,6 +270,65 @@ def list_models() -> list[str]:
     return list(REGISTRY)
 
 
+def weight_info(model: str, version: str | Path | None = None) -> dict:
+    """Describe a model's weights **without** downloading anything.
+
+    Mirrors :func:`resolve_weights`'s version resolution but only reads the
+    in-process registry, so it is safe to call for introspection (e.g.
+    ``ChemPipeline.version``) without triggering a multi-hundred-MB download.
+
+    Returns a dict with keys ``model``, ``source``, ``version``, ``repo_id``,
+    ``revision``, ``sha256``, ``requires`` and ``filename``.  ``source`` is one
+    of:
+
+    * ``"registry"``    — resolved to a published registry entry.
+    * ``"local"``       — an explicit local ``.pt`` path was supplied.
+    * ``"unpublished"`` — no version given and nothing published for this model.
+    * ``"unknown"``     — a version tag that is not in the registry.
+    """
+    out: dict = {
+        "model": model,
+        "source": None,
+        "version": None,
+        "repo_id": None,
+        "revision": None,
+        "sha256": None,
+        "requires": None,
+        "filename": None,
+    }
+
+    # Explicit local path (existing file, or path-like that simply isn't on disk).
+    if version is not None:
+        s = str(version)
+        if Path(version).exists() or "/" in s or "\\" in s or s.endswith(".pt"):
+            out["source"] = "local"
+            out["version"] = s
+            return out
+
+    tag = str(version) if version is not None else LATEST.get(model)
+    registry = REGISTRY.get(model, {})
+
+    if tag is None:
+        out["source"] = "unpublished"
+        return out
+    if tag not in registry:
+        out["source"] = "unknown"
+        out["version"] = tag
+        return out
+
+    meta = registry[tag]
+    out.update(
+        source="registry",
+        version=tag,
+        repo_id=meta.get("repo_id"),
+        revision=meta.get("revision"),
+        sha256=meta.get("sha256"),
+        requires=meta.get("requires"),
+        filename=meta.get("filename"),
+    )
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------

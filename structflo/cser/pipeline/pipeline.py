@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image
 
 from structflo.cser.inference.detector import detect_full, detect_tiled
-from structflo.cser.weights import resolve_weights
+from structflo.cser.weights import resolve_weights, weight_info
 
 from structflo.cser.pipeline.matcher import BaseMatcher
 from structflo.cser.pipeline.models import BBox, CompoundPair, Detection
@@ -18,6 +18,12 @@ from structflo.cser.pipeline.ocr import BaseOCR, EasyOCRExtractor
 from structflo.cser.pipeline.smiles_extractor import (
     BaseSmilesExtractor,
     DecimerExtractor,
+)
+from structflo.cser.pipeline.version import (
+    PipelineInfo,
+    dependency_versions,
+    package_version,
+    python_version,
 )
 
 # Anything the pipeline accepts as an image input
@@ -112,6 +118,7 @@ class ChemPipeline:
         self.conf = conf
         self.grayscale = grayscale
         self._model = None  # ultralytics YOLO — lazy-loaded on first detect() call
+        self._weights_path: str | None = None  # set once detector weights resolve
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -122,11 +129,80 @@ class ChemPipeline:
             from ultralytics import YOLO
 
             weights_path = resolve_weights("cser-detector", version=self._weights)
+            self._weights_path = str(weights_path)
             self._model = YOLO(str(weights_path))
 
     @staticmethod
     def _crop(image: Image.Image, bbox: BBox) -> Image.Image:
         return image.crop((int(bbox.x1), int(bbox.y1), int(bbox.x2), int(bbox.y2)))
+
+    # ------------------------------------------------------------------
+    # Introspection
+    # ------------------------------------------------------------------
+
+    @property
+    def version(self) -> PipelineInfo:
+        """A display-friendly snapshot of every version this pipeline uses.
+
+        Captures the package version, detector + matcher weight provenance
+        (version, repo, revision, sha256, local path), the runtime config, and
+        key dependency versions.  Reading it never downloads weights — paths are
+        only filled in for components that are already loaded.
+
+        >>> pipeline = ChemPipeline(tile=False, conf=0.30, matcher=RelationalMatcher())
+        >>> pipeline.version           # renders as a table in Jupyter / terminal
+        >>> pipeline.version["package"]["version"]
+        '0.4.1'
+        """
+        det = weight_info("cser-detector", self._weights)
+        det["loaded"] = self._model is not None
+        det["path"] = self._weights_path
+
+        matcher_weights = None
+        descriptor = getattr(self._matcher, "weight_descriptor", None)
+        if callable(descriptor):
+            matcher_weights = descriptor()
+
+        # Surface whichever common knobs the configured matcher exposes.
+        param_names = (
+            "min_score",
+            "dustbin_margin",
+            "max_distance",
+            "max_dist_px",
+        )
+        params = {
+            name: getattr(self._matcher, name)
+            for name in param_names
+            if getattr(self._matcher, name, None) is not None
+        }
+        device = getattr(self._matcher, "_device", None)
+        if device is not None:
+            params["device"] = str(device)
+
+        data = {
+            "package": {
+                "name": "structflo-cser",
+                "version": package_version(),
+                "python": python_version(),
+            },
+            "detector": det,
+            "matcher": {
+                "class": type(self._matcher).__name__,
+                "weights": matcher_weights,
+                "params": params,
+            },
+            "smiles_extractor": {"class": type(self._smiles).__name__},
+            "ocr": {"class": type(self._ocr).__name__},
+            "config": {
+                "tile": self.tile,
+                "tile_size": self.tile_size,
+                "imgsz": self.imgsz,
+                "conf": self.conf,
+                "grayscale": self.grayscale,
+            },
+            "dependencies": dependency_versions(),
+        }
+        return PipelineInfo(data)
 
     # ------------------------------------------------------------------
     # Low-level step methods

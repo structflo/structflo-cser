@@ -31,6 +31,15 @@ class BaseMatcher(ABC):
         """
         ...
 
+    def weight_descriptor(self) -> dict | None:
+        """Describe the matcher's learned weights for ``ChemPipeline.version``.
+
+        Returns ``None`` for parameter-free matchers (e.g. ``HungarianMatcher``).
+        Learned matchers override this to return a :func:`weight_info` dict,
+        optionally with the resolved local ``"path"`` once loaded.
+        """
+        return None
+
 
 class HungarianMatcher(BaseMatcher):
     """Optimal 1-to-1 matching via the Hungarian algorithm on centroid Euclidean distance.
