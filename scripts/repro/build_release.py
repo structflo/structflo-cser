@@ -124,8 +124,8 @@ def main() -> None:
             }
         )
 
-    # ---- logs ----
-    for sub in ("train", "eval"):
+    # ---- logs (paper-relevant subdirs; all text, no real filenames) ----
+    for sub in ("train", "eval", "scale", "scale_train", "matched"):
         s = REPRO / "logs" / sub
         if s.exists():
             shutil.copytree(s, out / "logs" / sub, dirs_exist_ok=True)

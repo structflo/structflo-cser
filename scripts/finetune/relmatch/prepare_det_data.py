@@ -44,7 +44,8 @@ def _best(box, cands, thr):
     return bi
 
 
-def build_split(model, gt_dir, img_dir, out_dir, conf, imgsz):
+def build_split(model, gt_dir, img_dir, out_dir, conf, imgsz, label_conf=None):
+    label_conf = conf if label_conf is None else label_conf
     out_dir.mkdir(parents=True, exist_ok=True)
     files = sorted(gt_dir.glob("*.json"))
     n_pages = n_fp_struct = n_det_struct = n_missed_label = n_dustbin = n_real = 0
@@ -62,7 +63,7 @@ def build_split(model, gt_dir, img_dir, out_dir, conf, imgsz):
 
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
         page_h, page_w = img_rgb.shape[:2]
-        res = model(img_rgb, conf=conf, imgsz=imgsz, verbose=False)[0]
+        res = model(img_rgb, conf=min(conf, label_conf), imgsz=imgsz, verbose=False)[0]
 
         d_struct_boxes, d_struct_conf = [], []
         d_label_boxes, d_label_conf = [], []
@@ -70,6 +71,8 @@ def build_split(model, gt_dir, img_dir, out_dir, conf, imgsz):
             x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].cpu().numpy())
             cls = int(box.cls[0])
             cf = float(box.conf[0])
+            if cf < (label_conf if cls == 1 else conf):  # per-class gating
+                continue
             if cls == 0:
                 d_struct_boxes.append([x1, y1, x2, y2])
                 d_struct_conf.append(cf)
@@ -131,8 +134,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", type=Path, default=Path("data/finetune/lps"))
     ap.add_argument("--out", type=Path, default=Path("data/finetune/relmatch_det"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument(
+        "--detector",
+        type=Path,
+        default=Path("runs/labels_detect/finetune_3way/weights/best.pt"),
+    )
     ap.add_argument("--conf", type=float, default=0.3)
+    ap.add_argument(
+        "--label-conf",
+        type=float,
+        default=None,
+        help="per-class conf for labels (class 1); default = --conf",
+    )
     ap.add_argument("--imgsz", type=int, default=1280)
     args = ap.parse_args()
 
@@ -148,6 +161,7 @@ def main():
             args.out / split,
             args.conf,
             args.imgsz,
+            label_conf=args.label_conf,
         )
     print(f"[prep] done → {args.out}")
 

@@ -60,8 +60,16 @@ def main():
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch_det/best.pt"))
     ap.add_argument("--margin", type=float, default=2.0, help="relational dustbin margin for Part B")
     ap.add_argument("--conf", type=float, default=0.3)
+    ap.add_argument(
+        "--label-conf",
+        type=float,
+        default=None,
+        help="per-class conf for labels (class 1); default = --conf. Lower it to give the "
+        "matcher more label candidates (Part B / end-to-end only; Part A uses GT boxes).",
+    )
     ap.add_argument("--imgsz", type=int, default=1280)
     args = ap.parse_args()
+    label_conf = args.label_conf if args.label_conf is not None else args.conf
 
     manifest = json.loads(args.manifest.read_text())
     stem2split = {}
@@ -113,12 +121,18 @@ def main():
 
         # ---- Part B inputs: detections (one YOLO pass) ----
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
-        res = model(img_rgb, conf=args.conf, imgsz=args.imgsz, verbose=False)[0]
+        # Run YOLO at the lower of the two thresholds, then keep each class by its own conf:
+        # structures >= --conf, labels >= --label-conf (per-class gating for Part B).
+        res = model(img_rgb, conf=min(args.conf, label_conf), imgsz=args.imgsz, verbose=False)[0]
         det_dets = []
         for box in res.boxes:
+            cls = int(box.cls[0])
+            cf = float(box.conf[0])
+            if cf < (label_conf if cls == 1 else args.conf):
+                continue
             x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
             det_dets.append(Detection.from_dict({"bbox": [float(x1), float(y1), float(x2), float(y2)],
-                                                 "conf": float(box.conf[0]), "class_id": int(box.cls[0])}))
+                                                 "conf": cf, "class_id": cls}))
         labelled = [e for e in entries if e.get("label_bbox") is not None]
 
         for tgt in (split, "all"):
@@ -187,7 +201,7 @@ def main():
             print(f"    {n:>11} | {assign:>7.1%} {reject:>7.1%} {prec:>7.1%}")
 
     print("\n" + "=" * 70)
-    print(f"PART B — end-to-end full@{args.imgsz} → pairing F1 (centroid; Relational margin={args.margin})")
+    print(f"PART B — end-to-end full@{args.imgsz} (struct conf {args.conf}, label conf {label_conf}) → pairing F1 (centroid; Relational margin={args.margin})")
     print("=" * 70)
     for s in SPLITS:
         print(f"\n  [{s.upper()}]  GT pairs={gt_pairs[s]}")

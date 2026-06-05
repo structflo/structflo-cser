@@ -19,6 +19,11 @@ from pathlib import Path
 
 REPRO = Path("runs/repro")
 ELOG = REPRO / "logs" / "eval"
+# §B relational uses the matched per-seed detector protocol when present
+# (run_relmatch_matched.sh: each seed's relmatch_det trained on its OWN detector's boxes);
+# falls back to the original real eval (already matched for seed 42). Hungarian/LPS are
+# identical in both files, so only the relational row changes.
+MATCHED = REPRO / "logs" / "matched"
 MATCHERS = ("Hungarian", "LPS", "Relational")
 ROW_RE = re.compile(r"^\s*(Hungarian|LPS|Relational)\s*\|\s*(.+?)\s*$")
 
@@ -82,7 +87,11 @@ def collect(seeds: list[int]) -> dict:
     for s in seeds:
         per[s] = {
             "synth_match": parse_eval_compare(ELOG / f"eval_synth_s{s}.txt"),
-            "real_match": parse_eval_compare(ELOG / f"eval_real_s{s}.txt"),
+            "real_match": parse_eval_compare(
+                MATCHED / f"eval_s{s}.txt"
+                if (MATCHED / f"eval_s{s}.txt").exists()
+                else ELOG / f"eval_real_s{s}.txt"
+            ),
             "real_gtabl": parse_eval_compare(ELOG / f"eval_real_gtabl_s{s}.txt"),
             "lps_acc": {
                 "baseline_real": parse_lps_acc(
@@ -159,6 +168,8 @@ def main() -> None:
         "All eval @ imgsz 1280 (deployment resolution). §A = synthetic-only weights on the "
         "held-out synthetic TEST set (1000 pages); §B = real-fine-tuned weights on the real "
         "TEST set (100 pages). Splits fixed across seeds. std = sample std (ddof=1).\n"
+        "\n§B relational matcher uses the matched per-seed detector protocol "
+        "(each seed's relmatch_det trained on its own detector's boxes); Hungarian/LPS unchanged.\n"
     )
 
     # ---- Table 1: synthetic detection (base detector, synth TEST) ----
