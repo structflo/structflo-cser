@@ -1,0 +1,34 @@
+# Lab deployment image. GitHub (structflo/structflo-cser) stays the source of
+# truth; this mirror exists to build for the SACNet swarm registry.
+image: docker:latest
+
+services:
+  - docker:dind
+
+variables:
+  DOCKER_DRIVER: overlay2
+  IMAGE_TAG: "$CI_REGISTRY/sid/structflo-cser:$CI_COMMIT_REF_NAME"
+  GIT_DEPTH: 0        # git describe needs the tag history
+
+stages:
+  - build
+
+# Build and push in one job on purpose: separate jobs get separate dind
+# daemons, so an image built in one is not present in the other.
+build:
+  stage: build
+  script:
+    - docker info
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
+    # VERSION feeds SETUPTOOLS_SCM_PRETEND_VERSION. The image has no .git, and
+    # weights.py refuses to load cser-relmatcher below 0.3.0 — an image built
+    # without a real version looks fine until the first upload fails.
+    - apk add --no-cache git
+    - git fetch --tags --force || true
+    - VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//')
+    - test -n "$VERSION" || { echo "no git tag reachable; cannot stamp a version"; exit 1; }
+    - echo "building $IMAGE_TAG at version $VERSION"
+    - docker build --build-arg VERSION="$VERSION" -t $IMAGE_TAG .
+    - docker push $IMAGE_TAG
+  only:
+    - main

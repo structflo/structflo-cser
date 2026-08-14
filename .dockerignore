@@ -1,0 +1,19 @@
+.git
+.github
+.venv
+.ruff_cache
+.pytest_cache
+__pycache__
+*.pyc
+
+# training data, model runs, and notebook assets — none of it belongs in the image
+data/
+runs/
+detections/
+archive/
+notebooks/
+docs/
+scripts/
+asset_scripts/
+tests/
+*.pt

@@ -11,6 +11,7 @@ dependencies = [
     "matplotlib>=3.10.8",
     "easyocr>=1.7",
     "numpy>=2.4.2",
+    "openpyxl>=3.1",
     "opencv-python-headless>=4.13.0.92",
     "pillow>=12.1.1",
     "pymupdf>=1.27.1",
@@ -36,6 +37,7 @@ sf-extract              = "structflo.cser.pipeline.cli:main"
 sf-train-lps            = "structflo.cser.lps.train:main"
 sf-eval-lps             = "structflo.cser.lps.evaluate:main"
 sf-train-relmatch       = "structflo.cser.relmatch.train:main"
+sf-web                  = "webapp.server:main"
 
 [build-system]
 requires = ["hatchling<1.28", "hatch-vcs"]
@@ -45,7 +47,7 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.hatch.build.targets.wheel]
-packages = ["structflo", "annotate"]
+packages = ["structflo", "annotate", "webapp"]
 
 [dependency-groups]
 dev = [

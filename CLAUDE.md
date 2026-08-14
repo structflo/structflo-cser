@@ -10,9 +10,11 @@ strings and OCR text.
 ## Package name & layout
 
 - **PyPI package**: `structflo-cser`
-- **Top-level packages** (wheel): `structflo`, `annotate`
+- **Top-level packages** (wheel): `structflo`, `annotate`, `webapp`
 - **Source root**: `structflo/cser/` — all library code lives here
 - **Annotate tool**: `annotate/` — Flask web app for manual bbox annotation
+- **Extraction UI**: `webapp/` — Flask web app for running the pipeline on an upload
+  (no auth; expects a reverse proxy in front)
 
 ### Module map
 
@@ -77,6 +79,10 @@ annotate/
   pdf.py               PDF page rendering for annotation
   storage.py           Annotation JSON storage
   templates/           HTML templates
+
+webapp/
+  server.py            Flask routes + CLI (upload → NDJSON stream of pairs per page)
+  templates/           Single-page UI: page overlay + structure→SMILES cards
 ```
 
 ## CLI entry points (registered in pyproject.toml)
@@ -93,6 +99,7 @@ annotate/
 | `sf-annotate`             | `annotate.__main__:main`                  | Manual annotation web tool           |
 | `sf-train-lps`            | `structflo.cser.lps.train:main`           | Train Learned Pair Scorer            |
 | `sf-eval-lps`             | `structflo.cser.lps.evaluate:main`        | Evaluate LPS model                   |
+| `sf-web`                  | `webapp.server:main`                      | Upload → IDs + SMILES web UI         |
 
 ## Key public API
 
