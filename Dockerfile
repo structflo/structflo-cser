@@ -1,8 +1,11 @@
 FROM python:3.12-slim
 
-# rdkit + opencv (via ultralytics/easyocr) need libGL and glib at runtime
+# rdkit + opencv (via ultralytics/easyocr) need libGL and glib at runtime.
+# libxrender1/libxext6 are for rdkit.Chem.Draw, which webapp/server.py imports
+# lazily to re-render each extracted SMILES: without them the app boots clean and
+# then fails on the first page that actually finds a compound.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      libgl1 libglib2.0-0 \
+      libgl1 libglib2.0-0 libxrender1 libxext6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
