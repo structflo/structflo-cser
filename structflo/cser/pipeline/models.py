@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from PIL.Image import Image
 
 
 @dataclass
@@ -85,3 +89,18 @@ class CompoundPair:
             "label_text": self.label_text,
         }
         return d
+
+
+@dataclass
+class PageResult:
+    """One PDF page: the render the model saw, its size, and what it found.
+
+    ``width``/``height`` are the pixel dimensions of ``image``. Consumers that
+    persist bounding boxes must persist this render alongside them — the boxes
+    are in its pixel coordinates and mean nothing without it.
+    """
+
+    image: Image
+    width: int
+    height: int
+    pairs: list[CompoundPair]

@@ -20,9 +20,9 @@ Custom adapters
 """
 
 from structflo.cser.pipeline.matcher import BaseMatcher, HungarianMatcher
-from structflo.cser.pipeline.models import BBox, CompoundPair, Detection
+from structflo.cser.pipeline.models import BBox, CompoundPair, Detection, PageResult
 from structflo.cser.pipeline.ocr import BaseOCR, EasyOCRExtractor, NullOCR
-from structflo.cser.pipeline.pipeline import ChemPipeline
+from structflo.cser.pipeline.pipeline import DEFAULT_DPI, ChemPipeline, render_page
 from structflo.cser.pipeline.smiles_extractor import (
     BaseSmilesExtractor,
     DecimerExtractor,
@@ -32,10 +32,13 @@ from structflo.cser.pipeline.smiles_extractor import (
 __all__ = [
     # Pipeline
     "ChemPipeline",
+    "DEFAULT_DPI",
+    "render_page",
     # Data models
     "BBox",
     "Detection",
     "CompoundPair",
+    "PageResult",
     # Matching adapters
     "BaseMatcher",
     "HungarianMatcher",

@@ -13,7 +13,7 @@ from structflo.cser.inference.detector import detect_full, detect_tiled
 from structflo.cser.weights import resolve_weights, weight_info
 
 from structflo.cser.pipeline.matcher import BaseMatcher
-from structflo.cser.pipeline.models import BBox, CompoundPair, Detection
+from structflo.cser.pipeline.models import BBox, CompoundPair, Detection, PageResult
 from structflo.cser.pipeline.ocr import BaseOCR, EasyOCRExtractor
 from structflo.cser.pipeline.smiles_extractor import (
     BaseSmilesExtractor,
@@ -28,6 +28,36 @@ from structflo.cser.pipeline.version import (
 
 # Anything the pipeline accepts as an image input
 ImageLike = Union[Path, str, np.ndarray, Image.Image]
+
+DEFAULT_DPI = 150
+"""Rendering resolution the pipeline is tuned for.
+
+The detector letterboxes to imgsz=1280, so scale matters: 144 dpi drops pairs
+that 150 finds, and 200+ dpi finds none. Downstream consumers that store
+coordinates must render at this dpi and must import this constant rather than
+repeat the number.
+"""
+
+
+def render_page(
+    pdf_path: Path | str, page_index: int, *, dpi: int = DEFAULT_DPI
+) -> Image.Image:
+    """Render a single PDF page to a PIL image at ``dpi``.
+
+    Module-level and model-free on purpose: callers that only need the image
+    (to re-display or to export coordinates against) must not have to construct
+    a ChemPipeline and pull down detector weights.
+    """
+    import fitz  # pymupdf — required dependency
+
+    doc = fitz.open(str(pdf_path))
+    try:
+        page = doc[page_index]
+        mat = fitz.Matrix(dpi / 72, dpi / 72)
+        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
+        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+    finally:
+        doc.close()
 
 
 def _to_pil(image: ImageLike) -> Image.Image:
@@ -284,11 +314,32 @@ class ChemPipeline:
         pairs = self.match(detections, image=img)
         return self.enrich(pairs, img)
 
+    def process_pdf_page(
+        self,
+        pdf_path: Path | str,
+        page_index: int,
+        *,
+        dpi: int = DEFAULT_DPI,
+    ) -> PageResult:
+        """Run the full pipeline on ONE page and return the render with it.
+
+        Unlike :meth:`process_pdf`, the image and its dimensions come back to
+        the caller, so bounding boxes can be persisted against a render the
+        caller also keeps.
+        """
+        image = render_page(pdf_path, page_index, dpi=dpi)
+        return PageResult(
+            image=image,
+            width=image.width,
+            height=image.height,
+            pairs=self.process(image),
+        )
+
     def process_pdf(
         self,
         pdf_path: Path | str,
         *,
-        dpi: int = 150,
+        dpi: int = DEFAULT_DPI,
         output_pdf: Path | str | None = None,
     ) -> list[list[CompoundPair]]:
         """Run the full pipeline on every page of a PDF.
