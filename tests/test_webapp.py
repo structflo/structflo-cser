@@ -13,8 +13,12 @@ from webapp import server
 def _pair(smiles, text):
     det = lambda cid: Detection(bbox=BBox(10, 10, 60, 60), conf=0.9, class_id=cid)  # noqa: E731
     return CompoundPair(
-        structure=det(0), label=det(1), match_distance=1.0,
-        smiles=smiles, label_text=text, match_confidence=0.87,
+        structure=det(0),
+        label=det(1),
+        match_distance=1.0,
+        smiles=smiles,
+        label_text=text,
+        match_confidence=0.87,
     )
 
 
@@ -39,7 +43,9 @@ def test_extract_streams_pairs(client):
     res = client.post("/extract", data={"file": (io.BytesIO(_png_bytes()), "page.png")})
     assert res.status_code == 200
 
-    lines = [json.loads(x) for x in res.get_data(as_text=True).splitlines() if x.strip()]
+    lines = [
+        json.loads(x) for x in res.get_data(as_text=True).splitlines() if x.strip()
+    ]
     meta, page = lines[0], lines[1]
     assert meta["n_pages"] == 1
     assert page["w"] == 200 and page["image"].startswith("data:image/jpeg;base64,")
@@ -47,7 +53,7 @@ def test_extract_streams_pairs(client):
     ok, bad = page["pairs"]
     assert (ok["id"], ok["smiles"]) == ("1a", "CCO")
     assert ok["smiles_img"].startswith("data:image/png;base64,")  # rdkit re-render
-    assert bad["smiles_img"] is None                              # unparseable SMILES
+    assert bad["smiles_img"] is None  # unparseable SMILES
     assert ok["structure_bbox"] == [10, 10, 60, 60]
 
 
@@ -57,10 +63,15 @@ def test_rejects_unsupported_file(client):
 
 
 def test_xlsx_export_keeps_ids_as_text(client):
-    res = client.post("/export.xlsx", json={
-        "name": "paper.pdf",
-        "rows": [{"page": 1, "id": "7178-39-6", "smiles": "CCO", "confidence": 0.9}],
-    })
+    res = client.post(
+        "/export.xlsx",
+        json={
+            "name": "paper.pdf",
+            "rows": [
+                {"page": 1, "id": "7178-39-6", "smiles": "CCO", "confidence": 0.9}
+            ],
+        },
+    )
     assert res.status_code == 200
     assert "paper.xlsx" in res.headers["Content-Disposition"]
 
