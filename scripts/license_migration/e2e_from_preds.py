@@ -5,6 +5,9 @@ conf >= --label-conf are paired by each matcher; a predicted pair is correct whe
 structure box has IoU >= 0.5 with a GT structure AND the GT label's centroid lies inside the
 predicted label box. P = correct/predicted, R = correct/GT-labelled-pairs.
 
+With --out, the JSON also carries ``per_page`` — the per-stem tp/npred per matcher and
+GT pair count that the aggregate numbers are summed from (for paired bootstraps).
+
 Usage:
     uv run python scripts/license_migration/e2e_from_preds.py \
         --preds runs/license_migration/preds/yolo_v0.4/real_test.json --split test
@@ -101,12 +104,15 @@ def main() -> None:
     }
     matchers["Relational"].dustbin_margin = args.margin
     B = {n: dict(tp=0, npred=0) for n in matchers}
+    per_page: dict[str, dict] = {}
     gt_pairs = 0
     n_struct = n_label = 0
     for stem in sorted(stems):
         entries = json.loads((args.gt_dir / f"{stem}.json").read_text())
         labelled = [e for e in entries if e.get("label_bbox") is not None]
         gt_pairs += len(labelled)
+        pp = per_page[stem] = {n: dict(tp=0, npred=0) for n in matchers}
+        pp["gt_pairs"] = len(labelled)
         rec = preds["images"][stem]
         dets = [
             Detection.from_dict(d)
@@ -126,6 +132,7 @@ def main() -> None:
             else:
                 pairs = m.match(dets, image=img_l)
             B[name]["npred"] += len(pairs)
+            pp[name]["npred"] += len(pairs)
             for p in pairs:
                 ps, pl = p.structure.bbox.as_list(), p.label.bbox.as_list()
                 bi, bv = -1, 0.0
@@ -138,6 +145,7 @@ def main() -> None:
                 gl = entries[bi].get("label_bbox")
                 if gl is not None and bv >= 0.5 and _inside(_cent(gl), pl):
                     B[name]["tp"] += 1
+                    pp[name]["tp"] += 1
 
     print(
         f"{args.preds} [{args.split}: {len(stems)} pages, GT pairs={gt_pairs}; dets kept: {n_struct} struct, {n_label} label @ conf {args.conf}/{label_conf}]"
@@ -165,6 +173,7 @@ def main() -> None:
             "tp": b["tp"],
             "npred": b["npred"],
         }
+    result["per_page"] = per_page
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(result, indent=2))
