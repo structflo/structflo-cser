@@ -50,7 +50,7 @@ def main() -> None:
         "Defaults to the latest published weights (auto-downloaded).",
     )
     p.add_argument(
-        "--conf", type=float, default=0.3, help="Detection confidence threshold"
+        "--conf", type=float, default=0.4, help="Detection confidence threshold"
     )
     p.add_argument(
         "--tile",

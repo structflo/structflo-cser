@@ -458,7 +458,7 @@ def build_parser() -> argparse.ArgumentParser:
         "in transformers' D-FINE implementation — see trainer.py)",
     )
     p.add_argument(
-        "--conf", type=float, default=0.3, help="operating point for reported P/R"
+        "--conf", type=float, default=0.4, help="operating point for reported P/R"
     )
     p.add_argument(
         "--patience",
