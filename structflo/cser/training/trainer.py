@@ -211,11 +211,31 @@ def train(args: argparse.Namespace) -> Path:
         scale_jitter=args.scale_jitter,
         brightness=args.brightness,
         downscale_aug=args.downscale_aug,
+        photometric_aug=args.photometric_aug,
         limit=args.max_train_images,
     )
     val_ds = YoloDetectionDataset(
         val_images, imgsz=args.imgsz, augment=False, limit=args.max_val_images
     )
+    from structflo.cser.training.photometric import fixed_variant
+
+    val_variant_loaders = {}
+    for name in args.val_variants:
+        vds = YoloDetectionDataset(
+            val_images,
+            imgsz=args.imgsz,
+            augment=False,
+            limit=args.max_val_images,
+            transform=fixed_variant(name),
+        )
+        val_variant_loaders[name] = DataLoader(
+            vds,
+            batch_size=args.batch,
+            shuffle=False,
+            num_workers=max(1, args.workers // 2),
+            collate_fn=collate,
+            pin_memory=True,
+        )
     train_loader = DataLoader(
         train_ds,
         batch_size=args.batch,
@@ -354,6 +374,28 @@ def train(args: argparse.Namespace) -> Path:
         )
         row = _metrics_row(res)
         fit = fitness(res["all"])
+        if val_variant_loaders:
+            # checkpoint selection on the mean fitness over the plain val split and its
+            # deterministic photometric variants (e.g. inverted) so robustness counts
+            fits = [fit]
+            for name, vl in val_variant_loaders.items():
+                vres = validate(
+                    ema.ema,
+                    vl,
+                    labels_dir_for(val_images),
+                    device,
+                    imgsz=args.imgsz,
+                    op_conf=args.conf,
+                    amp=amp,
+                )
+                vf = fitness(vres["all"])
+                fits.append(vf)
+                print(
+                    f"[val:{name}] epoch {epoch + 1}: fitness {vf:.4f}  mAP50 {vres['all']['mAP50']:.4f}  "
+                    f"struct R {vres[0].recall:.3f}  label R {vres[1].recall:.3f}",
+                    flush=True,
+                )
+            fit = float(sum(fits) / len(fits))
         row.update(
             epoch=epoch + 1,
             train_loss=train_loss,
