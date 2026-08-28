@@ -53,6 +53,10 @@ def main() -> None:
             r = det_row(tag, split)
             if r:
                 lines.append(r)
+        for split in ("real_test", "real_val"):
+            r = det_row(tag, split, "_conf0.5")
+            if r:
+                lines.append(r.replace(f"| {tag}_conf0.5 |", f"| {tag} @ conf 0.5 (val-tuned) |"))
         for sc in ("0.48", "0.5"):
             for split in ("real_test", "real_val"):
                 r = det_row(tag, split, f"_scale{sc}")
@@ -62,14 +66,15 @@ def main() -> None:
               "| detector | split | Hungarian | LPS (conf pinned) | Relational |", "|---|---|---|---|---|"]
     for tag in args.tags:
         for split in ("test", "val"):
-            for suffix in ("", "_scale0.48", "_scale0.5"):
+            for suffix in ("", "_conf0.5", "_scale0.48", "_scale0.5"):
                 r = e2e_row(tag, split, suffix)
                 if r:
-                    lines.append(r)
-            r = _load(f"{tag}_e2e_{split}_relnew")
-            if r:
-                m = r["matchers"]["Relational"]
-                lines.append(f"| {tag} + recalibrated relational | {split} | — | — | {m['P']:.3f} / {m['R']:.3f} / **{m['F1']:.3f}** |")
+                    lines.append(r.replace(f"| {tag}_conf0.5 |", f"| {tag} @ conf 0.5 (val-tuned) |"))
+            for suffix, label in (("_relnew", "recalibrated relational @0.3"), ("_relnew_c0.5", "recalibrated relational @0.5")):
+                r = _load(f"{tag}_e2e_{split}{suffix}")
+                if r:
+                    m = r["matchers"]["Relational"]
+                    lines.append(f"| {tag} + {label} | {split} | — | — | {m['P']:.3f} / {m['R']:.3f} / **{m['F1']:.3f}** |")
     # conf sweep on val
     sweep = []
     for tag in args.tags:

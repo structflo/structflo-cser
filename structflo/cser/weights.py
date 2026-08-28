@@ -92,6 +92,17 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "sha256": "6ec488e8a2263a8fcf6f8259dab622d66aea3c970d1b48b253f9ed860ae90e33",
             "requires": ">=0.4.0,<1.0.0",
         },
+        # v1.0 — first non-Ultralytics detector: D-FINE-L (transformers, Apache-2.0),
+        # clean-room retrain (synthetic pretrain → real fine-tune on data/finetune/plus),
+        # single-file safetensors. v0.1–v0.4 above are YOLO11l/ultralytics checkpoints
+        # (AGPL lineage) and are retired: loading them raises a clear error.
+        "v1.0": {
+            "repo_id": "sidxz/structflo-cser-detector",
+            "filename": "best.safetensors",
+            "revision": "weights-v1.0",
+            "sha256": "8fea954f66850ae6fd695407aaae6520fd215a790d4dbe215dcf5ac1010a2a30",
+            "requires": ">=1.0.0,<2.0.0",
+        },
     },
     "cser-lps": {
         # Populate after first training run and HF Hub publish:
@@ -146,7 +157,7 @@ REGISTRY: dict[str, dict[str, dict]] = {
 # The version resolved when the caller does not specify one.
 # Keep in sync with REGISTRY — point to the newest entry per model.
 LATEST: dict[str, str | None] = {
-    "cser-detector": "v0.4",
+    "cser-detector": "v1.0",  # D-FINE; publish with scripts/publish_weights.py before release
     "cser-lps": "v0.3",  # set to "v1.0" after first publish
     "cser-relmatcher": "v0.2",
 }
@@ -344,6 +355,8 @@ def _check_compatibility(model: str, weights_version: str, requires: str) -> Non
         pkg_ver = Version(importlib.metadata.version("structflo-cser"))
     except importlib.metadata.PackageNotFoundError:
         return  # running from a source checkout — skip the check
+    if pkg_ver.is_devrelease:
+        return  # editable/source install (hatch-vcs X.Y.Z.devN) — skip the check
 
     if pkg_ver not in SpecifierSet(requires):
         raise WeightsCompatibilityError(

@@ -87,7 +87,107 @@ next to DECIMER.
 
 ## Results — D-FINE detector
 
-_(filled in from `runs/license_migration/eval/dfine_l_*.json` when the training chain finishes)_
+Two-stage clean-room training: `dfine_l_synth` = 10 epochs on the 10 000 synthetic pages
+(best epoch 8; synthetic val mAP50 0.995 / mAP50-95 0.976), then `dfine_l_plus` = fine-tune on the
+same corpus as YOLO v0.4 (`data/finetune/plus/yolo`, 3 900 pages; selection on the frozen 75-page
+real_val; early-stopped at epoch 26, best epoch 16). Everything below is scored with the same
+evaluator on the same frozen pages as the YOLO baseline.
+
+**Headline (held-out real_test, 100 pages).** At its own val-tuned operating point (conf 0.5 for
+both classes — D-FINE's sigmoid scores are calibrated differently from YOLO's, whose val optimum is
+0.3), the D-FINE detector gives **Hungarian end-to-end F1 0.816, identical to YOLO v0.4 (0.816)
+and inside the 3-seed band (0.807 ± 0.007)**, with better label precision at equal recall
+(0.804 vs 0.736). Detection quality is strictly better: mAP50 **0.918 vs 0.853**, mAP50-95
+**0.611 vs 0.523**, label mAP50 0.868 vs 0.748, label recall 0.899 vs 0.826 at conf 0.3.
+The deployment-regime renders (0.48×/0.5× input ≈ 144/150 dpi) give the same numbers
+(mAP50 0.915–0.916), so `DEFAULT_DPI = 150` stands. Synthetic test: mAP50 0.995 / mAP50-95 0.979
+(YOLO 0.995 / 0.931). Latency 17 ms/page (bf16) vs 12.5 ms.
+
+**Learned matchers need the recalibration that was predicted.** With the *old* YOLO-calibrated
+weights, LPS (0.791) and the relational matcher (0.809 at conf 0.5) sit below their YOLO numbers
+(0.823 / 0.834); the relational matcher is being re-trained on the new detector's boxes
+(`recalibrate_relmatch.sh`, conf 0.3 and 0.5 variants) — see the "recalibrated relational" rows.
+
+Operating point: e2e F1 on real_val for the fine-tuned D-FINE peaks at struct conf 0.5 / label
+conf 0.5 (Hungarian 0.721, LPS 0.732, Relational 0.746 — a tie with YOLO's val optimum
+0.729 / 0.733 / 0.745). Rows tagged "@ conf 0.3" use YOLO's operating point and understate D-FINE.
+
+### Detection (conf 0.3, IoU 0.5 for P/R; COCO-style AP)
+
+| detector | split | mAP50 | mAP50-95 | struct R | struct P | label R | label P | label mAP50 | label FP/page |
+|---|---|---|---|---|---|---|---|---|---|
+| yolo_v0.4 | real_test | 0.8531 | 0.5232 | 0.995 | 0.880 | 0.826 | 0.736 | 0.7477 | 0.73 |
+| yolo_v0.4 | real_val | 0.7831 | 0.4729 | 0.937 | 0.891 | 0.672 | 0.652 | 0.6418 | 0.63 |
+| yolo_v0.4 | synth_test | 0.9950 | 0.9312 | 1.000 | 0.998 | 0.993 | 0.989 | 0.9900 | 0.07 |
+| yolo_v0.4_scale0.48 | real_test | 0.8588 | 0.5553 | 0.989 | 0.892 | 0.830 | 0.751 | 0.7624 | 0.68 |
+| yolo_v0.4_scale0.48 | real_val | 0.7916 | 0.4846 | 0.937 | 0.869 | 0.695 | 0.655 | 0.6727 | 0.64 |
+| yolo_v0.4_scale0.5 | real_test | 0.8591 | 0.5517 | 0.995 | 0.890 | 0.830 | 0.751 | 0.7627 | 0.68 |
+| yolo_v0.4_scale0.5 | real_val | 0.7894 | 0.4810 | 0.932 | 0.864 | 0.695 | 0.679 | 0.6738 | 0.57 |
+| dfine_l_synth | real_test | 0.6734 | 0.3837 | 0.963 | 0.732 | 0.692 | 0.325 | 0.4409 | 3.55 |
+| dfine_l_synth | real_val | 0.6132 | 0.3547 | 0.942 | 0.583 | 0.550 | 0.224 | 0.3802 | 3.32 |
+| dfine_l_synth | synth_test | 0.9950 | 0.9777 | 1.000 | 0.999 | 0.998 | 0.976 | 0.9900 | 0.16 |
+| dfine_l_synth_scale0.48 | real_test | 0.6802 | 0.3810 | 0.968 | 0.733 | 0.721 | 0.328 | 0.4474 | 3.64 |
+| dfine_l_synth_scale0.48 | real_val | 0.6045 | 0.3509 | 0.937 | 0.576 | 0.542 | 0.213 | 0.3627 | 3.51 |
+| dfine_l_synth_scale0.5 | real_test | 0.6723 | 0.3793 | 0.965 | 0.734 | 0.700 | 0.321 | 0.4360 | 3.66 |
+| dfine_l_synth_scale0.5 | real_val | 0.6019 | 0.3491 | 0.942 | 0.581 | 0.550 | 0.212 | 0.3598 | 3.57 |
+| dfine_l_plus | real_test | 0.9176 | 0.6105 | 0.984 | 0.898 | 0.899 | 0.718 | 0.8676 | 0.87 |
+| dfine_l_plus | real_val | 0.8178 | 0.5328 | 0.969 | 0.853 | 0.824 | 0.560 | 0.6958 | 1.13 |
+| dfine_l_plus | synth_test | 0.9948 | 0.9785 | 1.000 | 0.999 | 0.997 | 0.984 | 0.9897 | 0.11 |
+| dfine_l_plus @ conf 0.5 (val-tuned) | real_test | 0.9176 | 0.6105 | 0.979 | 0.929 | 0.830 | 0.804 | 0.8676 | 0.50 |
+| dfine_l_plus @ conf 0.5 (val-tuned) | real_val | 0.8178 | 0.5328 | 0.948 | 0.883 | 0.725 | 0.714 | 0.6958 | 0.51 |
+| dfine_l_plus_scale0.48 | real_test | 0.9153 | 0.6101 | 0.984 | 0.893 | 0.891 | 0.724 | 0.8661 | 0.84 |
+| dfine_l_plus_scale0.48 | real_val | 0.8181 | 0.5315 | 0.969 | 0.849 | 0.802 | 0.565 | 0.6994 | 1.08 |
+| dfine_l_plus_scale0.5 | real_test | 0.9161 | 0.6103 | 0.984 | 0.900 | 0.895 | 0.722 | 0.8673 | 0.85 |
+| dfine_l_plus_scale0.5 | real_val | 0.8225 | 0.5334 | 0.969 | 0.853 | 0.817 | 0.563 | 0.7095 | 1.11 |
+
+### End-to-end pairing (P / R / F1; label-centroid criterion, struct IoU ≥ 0.5)
+
+| detector | split | Hungarian | LPS (conf pinned) | Relational |
+|---|---|---|---|---|
+| yolo_v0.4 | test | 0.798 / 0.834 / **0.816** | 0.849 / 0.798 / **0.823** | 0.834 / 0.834 / **0.834** |
+| yolo_v0.4_scale0.48 | test | 0.809 / 0.838 / **0.823** | 0.832 / 0.802 / **0.816** | 0.829 / 0.842 / **0.835** |
+| yolo_v0.4_scale0.5 | test | 0.792 / 0.834 / **0.813** | 0.822 / 0.802 / **0.811** | 0.817 / 0.834 / **0.826** |
+| yolo_v0.4 | val | 0.776 / 0.687 / **0.729** | 0.807 / 0.672 / **0.733** | 0.824 / 0.679 / **0.745** |
+| dfine_l_synth | test | 0.340 / 0.587 / **0.430** | 0.432 / 0.603 / **0.503** | 0.360 / 0.567 / **0.440** |
+| dfine_l_synth | val | 0.285 / 0.534 / **0.371** | 0.376 / 0.565 / **0.451** | 0.352 / 0.588 / **0.440** |
+| dfine_l_plus | test | 0.723 / 0.854 / **0.783** | 0.741 / 0.810 / **0.774** | 0.746 / 0.854 / **0.796** |
+| dfine_l_plus @ conf 0.5 (val-tuned) | test | 0.815 / 0.818 / **0.816** | 0.818 / 0.765 / **0.791** | 0.812 / 0.806 / **0.809** |
+| dfine_l_plus | val | 0.575 / 0.733 / **0.644** | 0.685 / 0.748 / **0.715** | 0.669 / 0.756 / **0.710** |
+| dfine_l_plus @ conf 0.5 (val-tuned) | val | 0.732 / 0.710 / **0.721** | 0.783 / 0.687 / **0.732** | 0.777 / 0.718 / **0.746** |
+
+### Operating-point sweep on real VAL (e2e F1)
+
+| detector | conf | Hungarian | LPS | Relational |
+|---|---|---|---|---|
+| yolo_v0.4 | 0.1 | 0.671 | 0.691 | 0.684 |
+| yolo_v0.4 | 0.2 | 0.690 | 0.713 | 0.724 |
+| yolo_v0.4 | 0.25 | 0.714 | 0.735 | 0.738 |
+| yolo_v0.4 | 0.3 | 0.729 | 0.733 | 0.745 |
+| yolo_v0.4 | 0.35 | 0.727 | 0.729 | 0.737 |
+| yolo_v0.4 | 0.4 | 0.734 | 0.733 | 0.724 |
+| yolo_v0.4 | 0.5 | 0.642 | 0.645 | 0.629 |
+| dfine_l_synth | 0.1 | 0.326 | 0.376 | 0.398 |
+| dfine_l_synth | 0.2 | 0.378 | 0.451 | 0.444 |
+| dfine_l_synth | 0.25 | 0.382 | 0.447 | 0.442 |
+| dfine_l_synth | 0.3 | 0.371 | 0.451 | 0.440 |
+| dfine_l_synth | 0.35 | 0.404 | 0.455 | 0.428 |
+| dfine_l_synth | 0.4 | 0.429 | 0.476 | 0.444 |
+| dfine_l_synth | 0.5 | 0.445 | 0.495 | 0.446 |
+| dfine_l_plus | 0.1 | 0.328 | 0.435 | 0.515 |
+| dfine_l_plus | 0.2 | 0.563 | 0.640 | 0.632 |
+| dfine_l_plus | 0.25 | 0.634 | 0.702 | 0.674 |
+| dfine_l_plus | 0.3 | 0.644 | 0.715 | 0.710 |
+| dfine_l_plus | 0.35 | 0.678 | 0.729 | 0.728 |
+| dfine_l_plus | 0.4 | 0.712 | 0.730 | 0.726 |
+| dfine_l_plus | 0.5 | 0.721 | 0.732 | 0.746 |
+
+### PyMuPDF → pypdfium2 render agreement (same detector on both renders)
+
+| dpi | pages | agreement F1 | pages with identical counts | median |Δconf| |
+|---|---|---|---|---|
+| 144 | 300 | 0.9514 | 212 | 0.013 |
+| 150 | 300 | 0.9631 | 221 | 0.013 |
+
 
 ## A training pitfall worth knowing (transformers D-FINE)
 
