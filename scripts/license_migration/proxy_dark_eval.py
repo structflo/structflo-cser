@@ -23,7 +23,12 @@ from structflo.cser.inference.dfine import DFineDetector
 from structflo.cser.inference.metrics import ImageEval, evaluate, load_yolo_labels
 from structflo.cser.pipeline.matcher import HungarianMatcher
 from structflo.cser.pipeline.models import Detection
-from structflo.cser.training.photometric import VARIANT_NAMES, fixed_variant
+from structflo.cser.training.photometric import (
+    HELDOUT_NAMES,
+    VARIANT_GROUPS,
+    VARIANT_NAMES,
+    fixed_variant,
+)
 
 GT_DIR = Path(
     "/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data/ground_truth"
@@ -63,7 +68,15 @@ def main() -> None:
     ap.add_argument("--weights", required=True)
     ap.add_argument("--split", default="real_test", choices=["real_test", "real_val"])
     ap.add_argument("--conf", type=float, default=0.4)
-    ap.add_argument("--variants", nargs="*", default=["original", *VARIANT_NAMES])
+    ap.add_argument(
+        "--variants", nargs="*", default=["original", *VARIANT_NAMES, *HELDOUT_NAMES]
+    )
+    ap.add_argument(
+        "--scale",
+        type=float,
+        default=1.0,
+        help="pre-downscale after the transform (0.48 ≈ 144 dpi)",
+    )
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
 
@@ -85,8 +98,22 @@ def main() -> None:
             arr = np.array(im)
             gtb, gtc = load_yolo_labels(lbl_dir / f"{p.stem}.txt", im.width, im.height)
             if f is not None:
-                arr = f(arr, gtb[gtc == 0])
-            dets = det.predict(arr, conf=0.001)
+                arr = f(arr, gtb, gtc)  # all GT boxes + classes: one 'cards' definition
+            if args.scale != 1.0:
+                small = Image.fromarray(arr).resize(
+                    (
+                        max(1, round(im.width * args.scale)),
+                        max(1, round(im.height * args.scale)),
+                    ),
+                    Image.Resampling.LANCZOS,
+                )
+                dets = det.predict(np.array(small), conf=0.001)
+                sx, sy = im.width / small.width, im.height / small.height
+                for d in dets:
+                    x1, y1, x2, y2 = d["bbox"]
+                    d["bbox"] = [x1 * sx, y1 * sy, x2 * sx, y2 * sy]
+            else:
+                dets = det.predict(arr, conf=0.001)
             ims.append(
                 ImageEval(
                     np.array([d["bbox"] for d in dets]).reshape(-1, 4),
@@ -120,13 +147,22 @@ def main() -> None:
             f"{name:14s} | {r['all']['mAP50']:.3f}  | {r['all']['mAP50-95']:.3f}    | {r[0].recall:.3f}    | {r[1].recall:.3f}   | {r[1].precision:.3f}   | {P:.3f} / {R:.3f} / {F:.3f}",
             flush=True,
         )
-    dark = [v for k, v in results.items() if k != "original"]
-    summary = {
-        k: float(np.mean([d[k] for d in dark])) for k in ("mAP50", "label_R", "e2e_F1")
-    }
-    print(
-        f"mean over {len(dark)} variants: mAP50 {summary['mAP50']:.3f}  label R {summary['label_R']:.3f}  e2e F1 {summary['e2e_F1']:.3f}"
-    )
+    summary = {}
+    for grp, names in VARIANT_GROUPS.items():
+        rows = [results[n] for n in names if n in results]
+        if not rows:
+            continue
+        summary[grp] = {
+            k: float(np.mean([r[k] for r in rows]))
+            for k in ("mAP50", "mAP50-95", "label_R", "e2e_F1")
+        }
+        summary[grp]["min_e2e_F1"] = float(min(r["e2e_F1"] for r in rows))
+        summary[grp]["n"] = len(rows)
+        print(
+            f"group {grp:10s} (n={len(rows)}): mAP50 {summary[grp]['mAP50']:.3f}  "
+            f"mAP50-95 {summary[grp]['mAP50-95']:.3f}  label R {summary[grp]['label_R']:.3f}  "
+            f"e2e F1 {summary[grp]['e2e_F1']:.3f}  (min {summary[grp]['min_e2e_F1']:.3f})"
+        )
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(
@@ -136,7 +172,8 @@ def main() -> None:
                     "split": args.split,
                     "conf": args.conf,
                     "variants": results,
-                    "mean_variants": summary,
+                    "scale": args.scale,
+                    "groups": summary,
                 },
                 indent=2,
             )
