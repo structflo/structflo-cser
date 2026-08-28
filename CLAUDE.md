@@ -23,6 +23,7 @@ structflo/cser/
   config.py           PageConfig dataclass (A4@300DPI defaults, slide layouts)
   _geometry.py         Pure bbox utilities (clamp, intersect, placement)
   weights.py           HF Hub weight registry + auto-download (resolve_weights)
+  pdf.py               PDF page rendering via pypdfium2 (BSD-3); pixel sizes identical to the old PyMuPDF path
   __init__.py          Package version
 
   data/
@@ -45,10 +46,15 @@ structflo/cser/
     tabular.py         Excel-style and grid compound layouts
 
   training/
-    trainer.py         YOLO11l training wrapper (AdamW, cosine LR, grayscale augmentation)
+    trainer.py         D-FINE trainer (plain torch loop: AdamW, warmup+cosine, bf16, EMA, fitness selection) — `sf-train`
+    dataset.py         YOLO-txt dataset → letterboxed tensors + HF targets (scale/translate/brightness aug)
 
   inference/
-    detector.py        YOLO inference (tiled + full-image), visualisation
+    dfine.py           DFineDetector: transformers DFineForObjectDetection wrapper, single-file .safetensors weights
+    preprocess.py      Letterbox (long side → imgsz, pad 114) shared by training and inference
+    metrics.py         Dependency-free COCO-style AP + operating-point P/R (matches pycocotools)
+    evaluate.py        Evaluate a detector on an images/labels split or data yaml (replaces YOLO .val())
+    detector.py        load_detector / detect_full / detect_tiled seam, visualisation, `sf-detect`
     tiling.py          Sliding-window tile generation
     nms.py             Greedy NMS for merging tiled detections
     pairing.py         Hungarian matching on centroid distance
@@ -90,7 +96,7 @@ webapp/
 | Command                   | Module                                    | Purpose                              |
 |---------------------------|-------------------------------------------|--------------------------------------|
 | `sf-generate`             | `structflo.cser.generation.dataset:main`  | Generate synthetic training data     |
-| `sf-train`                | `structflo.cser.training.trainer:main`    | Train YOLO11l detector               |
+| `sf-train`                | `structflo.cser.training.trainer:main`    | Train the D-FINE detector            |
 | `sf-detect`               | `structflo.cser.inference.detector:main`  | Run detection on images              |
 | `sf-extract`              | `structflo.cser.pipeline.cli:main`        | Full pipeline: detect+match+extract  |
 | `sf-viz`                  | `structflo.cser.viz.labels:main`          | Visualise YOLO labels on images      |
@@ -123,17 +129,29 @@ ChemPipeline.to_records(pairs)
 
 ## Detection model
 
-- **Architecture**: YOLO11l (ultralytics)
+- **Architecture**: D-FINE-L (HGNet-V2 backbone, `transformers.DFineForObjectDetection`,
+  Apache-2.0; 31.1M params; NMS-free, 300 queries). Initialised from
+  `ustc-community/dfine-large-coco` (Apache-2.0, COCO-only). **Never** from Objects365 checkpoints
+  (dataset terms) and never with Ultralytics code/weights (AGPL) — the detector was re-trained
+  clean-room in an environment without `ultralytics` installed (`runs/license_migration/venv-train`).
 - **Classes**: 2 — `chemical_structure` (0), `compound_label` (1)
-- **Training image size**: 1280px
-- **Inference**: full-image at imgsz=1280 (the training resolution) is the default and
-  strictly outperforms tiling on large landscape pages — verified on real_test: label
-  recall 53%→80%, struct 93%→99%, 5× fewer false positives, end-to-end pairing F1 0.41→0.82.
-  Sliding-window tiling (1536px tiles, 20% overlap, per-class NMS) remains available via
-  `tile=True` for very dense pages, but cuts labels at tile boundaries.
-- **Training config**: AdamW, cosine LR, grayscale images, no colour augmentation
+- **Input**: grayscale→RGB, letterboxed so the long side is 1280 px (pad 114), pixels/255, no
+  mean/std normalisation. Training and inference share `inference/preprocess.py`.
+- **Inference**: full-image at imgsz=1280 is the default (`sf-extract`/`sf-detect` too — `--tile`
+  is opt-in). Scores are per-query sigmoid outputs; no NMS. Tiling (1536px tiles, per-class NMS)
+  remains available for very dense pages but cuts labels at tile boundaries.
+- **Weights format**: one `.safetensors` file with the HF config JSON in its metadata
+  (`format = structflo-cser-dfine-v1`); loaded via `DFineDetector.from_file`. Legacy YOLO `.pt`
+  files raise a clear error.
+- **Training config** (`sf-train`): AdamW (lr 1e-4 head / 1e-5 backbone for the synthetic stage,
+  5e-5 / 5e-6 for the real fine-tune), 1-epoch linear warmup + cosine to 1%, wd 1e-4, grad-clip 0.1,
+  bf16 autocast, EMA 0.9999, checkpoint selection on val fitness (0.1·mAP50 + 0.9·mAP50-95),
+  augmentation = scale jitter ±30% + random placement + brightness ±10% (no flips, no hue/sat).
+- **Evaluation**: `structflo.cser.inference.metrics` / `evaluate.py` (backend-neutral; verified to
+  match pycocotools exactly). Legacy ultralytics `.val()` numbers are NOT comparable with these.
 - **Runs directory**: `runs/labels_detect/`
-- **YOLO data config**: `config/data.yaml`
+- **Data config**: `config/data.yaml` (YOLO-txt label format is unchanged; the synthetic corpus is
+  10 000 train / 1 000 val JPEGs — the `.npy` files next to them are stale ultralytics caches)
 
 ## Matching strategies
 
@@ -172,10 +190,12 @@ Scripts live in `scripts/finetune/{yolo,lps}/`, each with `prepare_data.py`, `tr
 - **Combined data**: `data/finetune/{yolo,lps}/` — symlinks mixing subsampled synthetic + oversampled real
 - Knobs at top of each `prepare_data.py`: `N_SYNTH_TRAIN`, `N_SYNTH_VAL`, `REAL_OVERSAMPLE`, `N_REAL_VAL`
 
-### YOLO fine-tune
-- Starts from `runs/labels_detect/yolo11l_panels/weights/best.pt`
-- Output: `runs/labels_detect/finetune_trial/weights/best.pt`
-- Lower LR (1e-4), short warmup (1 epoch), 10 epochs default
+### Detector fine-tune (`scripts/finetune/yolo/` — directory name kept for history)
+- Two stages: synthetic base `sf-train --data config/data.yaml --init ustc-community/dfine-large-coco`
+  → `runs/labels_detect/dfine_l_synth/weights/best.safetensors`, then real fine-tune
+  `sf-train --data data/finetune/plus/yolo/data.yaml --init <base> --lr 5e-5 --backbone-lr 5e-6`
+  → `runs/labels_detect/dfine_l_plus/weights/best.safetensors` (val = real_val, report on real_test)
+- Compare against the frozen YOLO v0.4 baseline with `scripts/license_migration/{dump_preds,eval_preds,e2e_from_preds}.py`
 
 ### LPS fine-tune
 - Uses `sf-train-lps --finetune <checkpoint>` (loads weights only, fresh optimizer/scheduler)
@@ -226,6 +246,10 @@ uv build                   # build wheel
 
 - All images converted to grayscale before detection (matches training distribution)
 - Adapters pattern: `BaseMatcher`, `BaseOCR`, `BaseSmilesExtractor` ABCs for swappable components
-- Lazy model loading throughout (YOLO, EasyOCR, DECIMER loaded on first use)
+- Lazy model loading throughout (detector, EasyOCR, DECIMER loaded on first use)
+- Licensing: Apache-2.0 package; no GPL/AGPL dependencies are allowed (downstream docu-store is
+  PolyForm-NC). `THIRD_PARTY_NOTICES.md` tracks LGPL/MPL components and weight attributions.
+  Detector weights `cser-detector` v0.1–v0.4 are Ultralytics-derived and retired; do not re-add
+  `ultralytics` or `pymupdf`.
 - Weights never committed to git (*.pt in .gitignore), only on HF Hub
 - `runs/`, `data/`, `detections/`, `archive/` are gitignored

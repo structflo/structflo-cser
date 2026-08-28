@@ -10,6 +10,9 @@ import numpy as np
 from PIL import Image
 
 from structflo.cser.inference.detector import detect_full, detect_tiled
+from structflo.cser.inference.dfine import DFineDetector
+from structflo.cser.pdf import iter_pages
+from structflo.cser.pdf import render_page as _render_pdf_page
 from structflo.cser.weights import resolve_weights, weight_info
 
 from structflo.cser.pipeline.matcher import BaseMatcher
@@ -47,17 +50,11 @@ def render_page(
     Module-level and model-free on purpose: callers that only need the image
     (to re-display or to export coordinates against) must not have to construct
     a ChemPipeline and pull down detector weights.
-    """
-    import fitz  # pymupdf — required dependency
 
-    doc = fitz.open(str(pdf_path))
-    try:
-        page = doc[page_index]
-        mat = fitz.Matrix(dpi / 72, dpi / 72)
-        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-        return Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-    finally:
-        doc.close()
+    Rendering is done by pypdfium2 (BSD-3) with pixel dimensions identical to
+    the earlier PyMuPDF implementation — see :mod:`structflo.cser.pdf`.
+    """
+    return _render_pdf_page(pdf_path, page_index, dpi=dpi)
 
 
 def _to_pil(image: ImageLike) -> Image.Image:
@@ -111,8 +108,8 @@ class ChemPipeline:
         """
         Args:
             weights:          Weights version tag (e.g. ``"v1.0"``) or path to a
-                              local ``.pt`` file.  ``None`` auto-downloads the
-                              latest published weights.
+                              local ``.safetensors`` file.  ``None`` auto-downloads
+                              the latest published weights.
             matcher:          Pairing strategy.  Defaults to RelationalMatcher
                               (geometry-only optimal-transport matcher; the best
                               learned matcher in our benchmark and the strongest
@@ -129,7 +126,7 @@ class ChemPipeline:
                               detection.  Defaults to 1280, the training
                               resolution; full-image detection at 1280 strictly
                               outperforms tiling on large landscape pages.
-            conf:             YOLO confidence threshold.
+            conf:             Detection confidence threshold.
             grayscale:        Convert input images to grayscale before detection.
                               Defaults to True to match training data distribution.
         """
@@ -147,7 +144,7 @@ class ChemPipeline:
         self.imgsz = imgsz
         self.conf = conf
         self.grayscale = grayscale
-        self._model = None  # ultralytics YOLO — lazy-loaded on first detect() call
+        self._model: DFineDetector | None = None  # lazy-loaded on first detect() call
         self._weights_path: str | None = None  # set once detector weights resolve
 
     # ------------------------------------------------------------------
@@ -156,11 +153,9 @@ class ChemPipeline:
 
     def _load_model(self) -> None:
         if self._model is None:
-            from ultralytics import YOLO
-
             weights_path = resolve_weights("cser-detector", version=self._weights)
             self._weights_path = str(weights_path)
-            self._model = YOLO(str(weights_path))
+            self._model = DFineDetector.from_file(weights_path, imgsz=self.imgsz)
 
     @staticmethod
     def _crop(image: Image.Image, bbox: BBox) -> Image.Image:
@@ -239,7 +234,7 @@ class ChemPipeline:
     # ------------------------------------------------------------------
 
     def detect(self, image: ImageLike) -> list[Detection]:
-        """Run YOLO on *image* and return a flat list of Detection objects.
+        """Run the detector on *image* and return a flat list of Detection objects.
 
         Both ``structure`` (class 0) and ``label`` (class 1) detections are
         returned together; call ``match()`` next to pair them.
@@ -361,10 +356,6 @@ class ChemPipeline:
             ``CompoundPair`` objects with ``smiles`` and ``label_text``
             populated.
         """
-        import fitz  # pymupdf — required dependency
-
-        doc = fitz.open(str(pdf_path))
-        mat = fitz.Matrix(dpi / 72, dpi / 72)
         all_results: list[list[CompoundPair]] = []
 
         if output_pdf is not None:
@@ -377,9 +368,7 @@ class ChemPipeline:
             pdf_out = None
 
         try:
-            for page in doc:
-                pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            for img in iter_pages(pdf_path, dpi=dpi):
                 pairs = self.process(img)
                 all_results.append(pairs)
                 if pdf_out is not None:
@@ -387,7 +376,6 @@ class ChemPipeline:
                     pdf_out.savefig(fig, bbox_inches="tight")
                     plt.close(fig)
         finally:
-            doc.close()
             if pdf_out is not None:
                 pdf_out.close()
 

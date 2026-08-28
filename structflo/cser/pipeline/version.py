@@ -15,12 +15,14 @@ from collections.abc import Mapping
 
 # Dependencies worth surfacing for a reproducible bug report.
 _KEY_DEPS = (
-    "ultralytics",
+    "transformers",
     "torch",
+    "safetensors",
     "huggingface-hub",
     "numpy",
     "scipy",
     "pillow",
+    "pypdfium2",
     "easyocr",
     "decimer",
 )

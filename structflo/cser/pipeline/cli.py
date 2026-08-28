@@ -10,8 +10,8 @@ sl-extract --image page.png
 # Save to files, skip SMILES extraction
 sl-extract --image page.png --no_smiles --out results.json --csv results.csv
 
-# Custom weights and confidence, no tiling
-sl-extract --image page.png --weights my_model.pt --conf 0.4 --no_tile
+# Custom weights and confidence, sliding-window tiling for a very dense page
+sl-extract --image page.png --weights my_model.safetensors --conf 0.4 --tile
 
 # Only detect + match (skip both extraction steps)
 sl-extract --image page.png --no_smiles --no_ocr
@@ -46,14 +46,16 @@ def main() -> None:
     p.add_argument(
         "--weights",
         default=None,
-        help="Weights version tag (e.g. v1.0) or path to a local .pt file. "
+        help="Weights version tag (e.g. v1.0) or path to a local .safetensors file. "
         "Defaults to the latest published weights (auto-downloaded).",
     )
     p.add_argument(
         "--conf", type=float, default=0.3, help="Detection confidence threshold"
     )
     p.add_argument(
-        "--no_tile", action="store_true", help="Run on full image (no tiling)"
+        "--tile",
+        action="store_true",
+        help="Sliding-window tiling instead of full-image detection (dense pages only)",
     )
     p.add_argument("--tile_size", type=int, default=1536, help="Tile size in pixels")
     p.add_argument(
@@ -83,7 +85,7 @@ def main() -> None:
         matcher=matcher,
         smiles_extractor=smiles_ext,
         ocr=ocr_ext,
-        tile=not args.no_tile,
+        tile=args.tile,
         tile_size=args.tile_size,
         conf=args.conf,
     )

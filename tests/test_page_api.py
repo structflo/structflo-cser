@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fitz
 import pytest
 from PIL import Image
 
@@ -11,14 +10,20 @@ from structflo.cser.pipeline import DEFAULT_DPI, PageResult, render_page
 
 @pytest.fixture
 def two_page_pdf(tmp_path):
-    """A 2-page US-Letter PDF (612x792 pt). No fixture file needed."""
-    doc = fitz.open()
-    for text in ("page one", "page two"):
-        page = doc.new_page(width=612, height=792)
-        page.insert_text((72, 72), text)
+    """A 2-page US-Letter PDF (612x792 pt), written with matplotlib — no PDF library needed."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_pdf import PdfPages
+
     path = tmp_path / "letter.pdf"
-    doc.save(str(path))
-    doc.close()
+    with PdfPages(path) as pp:
+        for text in ("page one", "page two"):
+            fig = plt.figure(figsize=(612 / 72, 792 / 72), dpi=72)
+            fig.text(0.1, 0.9, text, fontsize=20)
+            pp.savefig(fig)
+            plt.close(fig)
     return path
 
 

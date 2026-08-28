@@ -1,9 +1,9 @@
-"""PDF → PNG page rendering."""
+"""PDF → PNG page rendering (pypdfium2 via structflo.cser.pdf)."""
 
 import uuid
 from pathlib import Path
 
-import fitz  # pymupdf
+from structflo.cser.pdf import iter_pages
 
 
 def render_pdf(pdf_path: Path, output_dir: Path, dpi: int) -> list[dict]:
@@ -18,24 +18,20 @@ def render_pdf(pdf_path: Path, output_dir: Path, dpi: int) -> list[dict]:
     img_dir = output_dir / "tmp"    # staging — moved to images/ on export
     img_dir.mkdir(parents=True, exist_ok=True)
 
-    doc = fitz.open(str(pdf_path))
-    mat = fitz.Matrix(dpi / 72, dpi / 72)   # PDF unit = 1/72 inch
     uid  = uuid.uuid4().hex[:6]             # unique per upload
     stem = f"{pdf_path.stem}_{uid}"
     pages = []
 
-    for i, page in enumerate(doc):
+    for i, img in enumerate(iter_pages(pdf_path, dpi=dpi)):
         pid = f"{stem}_p{i:03d}"
         out_path = img_dir / f"{pid}.png"
-        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
         if not out_path.exists():
-            pix.save(str(out_path))
+            img.save(str(out_path))
         pages.append({
             "id":   pid,
             "path": str(out_path),
-            "w":    pix.width,
-            "h":    pix.height,
+            "w":    img.width,
+            "h":    img.height,
         })
 
-    doc.close()
     return pages

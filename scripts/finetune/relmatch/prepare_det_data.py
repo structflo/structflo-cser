@@ -1,6 +1,6 @@
 """Build detection-based training data for the relational matcher.
 
-Runs the YOLO detector (full-image @ imgsz) over the GT train/val pages, then
+Runs the detector (full-image @ imgsz) over the GT train/val pages, then
 builds per-page samples whose nodes are the *detected* boxes (real localisation
 noise, false-positive structures, missed labels, real confidences) and whose
 targets are derived from the ground truth:
@@ -25,6 +25,8 @@ from pathlib import Path
 
 import numpy as np
 from PIL import Image
+
+from structflo.cser.inference.detector import detect_full, load_detector
 
 
 def _iou(a, b):
@@ -63,14 +65,14 @@ def build_split(model, gt_dir, img_dir, out_dir, conf, imgsz, label_conf=None):
 
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
         page_h, page_w = img_rgb.shape[:2]
-        res = model(img_rgb, conf=min(conf, label_conf), imgsz=imgsz, verbose=False)[0]
+        dets = detect_full(model, img_rgb, conf=min(conf, label_conf), imgsz=imgsz)
 
         d_struct_boxes, d_struct_conf = [], []
         d_label_boxes, d_label_conf = [], []
-        for box in res.boxes:
-            x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].cpu().numpy())
-            cls = int(box.cls[0])
-            cf = float(box.conf[0])
+        for d in dets:
+            x1, y1, x2, y2 = (float(v) for v in d["bbox"])
+            cls = int(d["class_id"])
+            cf = float(d["conf"])
             if cf < (label_conf if cls == 1 else conf):  # per-class gating
                 continue
             if cls == 0:
@@ -137,7 +139,8 @@ def main():
     ap.add_argument(
         "--detector",
         type=Path,
-        default=Path("runs/labels_detect/finetune_3way/weights/best.pt"),
+        default=None,
+        help="detector weights (.safetensors; default: latest published)",
     )
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument(
@@ -149,9 +152,7 @@ def main():
     ap.add_argument("--imgsz", type=int, default=1280)
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=args.imgsz)
     for split in ("train", "val"):
         print(f"[prep] {split} …")
         build_split(

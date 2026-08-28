@@ -35,7 +35,7 @@ huggingface-cli repo create sidxz/structflo-cser-detector --type model
 
 ## Case 1: Retrain on more data, same architecture
 
-This is the common case — better accuracy, same YOLO11l 2-class model.
+This is the common case — better accuracy, same D-FINE-L 2-class model.
 
 ### Steps 1–3 in one command
 
@@ -54,12 +54,13 @@ python scripts/publish_weights.py \
 
 The script:
 1. Computes the `sha256` of the weights file
-2. Uploads `best.pt` to `sidxz/structflo-cser-detector` on HF Hub
+2. Uploads `best.safetensors` to `sidxz/structflo-cser-detector` on HF Hub (LPS / relmatcher: `best.pt`)
 3. Creates the git tag `weights-v1.1` on the HF repo
 4. Patches [structflo/cser/weights.py](../structflo/cser/weights.py) — adds the
    registry entry and bumps `LATEST`
 
-Default weights file path: `runs/labels_detect/yolo11l_panels/weights/best.pt`.
+Default weights file path: `runs/labels_detect/dfine_l_plus/weights/best.safetensors`.
+The script also (re)uploads a model card (`README.md` with `license: apache-2.0`).
 Override with `--weights-file` if yours is elsewhere.
 
 ### Step 4 — commit and push

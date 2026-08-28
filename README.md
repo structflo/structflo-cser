@@ -27,13 +27,13 @@
 
 ---
 
-**structflo.cser** extracts chemical structure–label pairs from images and PDF pages. It uses a fine-tuned YOLO detector trained on synthetic chemical structure data to locate structures and compound labels on a page, then pairs them using Learned Pair Scorer (LPS) model or a simpler Hungarian Matcher.
+**structflo.cser** extracts chemical structure–label pairs from images and PDF pages. It uses a D-FINE detector (HuggingFace `transformers`, Apache-2.0) trained on synthetic chemical structure data and fine-tuned on annotated documents to locate structures and compound labels on a page, then pairs them using the relational matcher (default), the Learned Pair Scorer (LPS), or a simpler Hungarian matcher.
 
 The extracted crops can be passed to any structure-to-SMILES converter (DECIMER, MolScribe) and any OCR engine for label text. DECIMER and EasyOCR are bundled for convenience, but any downstream tools can be swapped in.
 
 **Two-step process:**
 
-1. **Detect** — A fine-tuned YOLO detector finds all chemical structures and compound labels in the image
+1. **Detect** — A fine-tuned D-FINE detector finds all chemical structures and compound labels in the image
 2. **Match** — A matcher pairs each structure with its corresponding label, producing cropped image pairs
 
 |                   | `LearnedMatcher` (default)              | `HungarianMatcher`              |
@@ -283,10 +283,10 @@ All available commands:
 
 | Command                   | Description                                |
 | ------------------------- | ------------------------------------------ |
-| `sf-detect`               | Run YOLO detection on images               |
+| `sf-detect`               | Run structure/label detection on images    |
 | `sf-extract`              | Full pipeline: detect → match → extract    |
 | `sf-generate`             | Generate synthetic training data           |
-| `sf-train`                | Train the YOLO detection model             |
+| `sf-train`                | Train the D-FINE detection model           |
 | `sf-train-lps`            | Train the Learned Pair Scorer              |
 | `sf-eval-lps`             | Evaluate LPS on a test set                |
 | `sf-fetch-smiles`         | Download SMILES from ChEMBL               |
@@ -302,4 +302,9 @@ All available commands:
 
 ## License
 
-Apache License 2.0
+Apache License 2.0 — see [LICENSE](LICENSE). Every runtime dependency is permissively licensed
+(no GPL/AGPL code paths; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the LGPL/MPL
+components used unmodified and for model-weight attributions). PDF rendering uses pypdfium2
+(BSD-3) and detection uses D-FINE via `transformers` (Apache-2.0); the earlier Ultralytics
+YOLO (AGPL-3.0) and PyMuPDF (AGPL-3.0) dependencies were removed and the detector re-trained
+clean-room.

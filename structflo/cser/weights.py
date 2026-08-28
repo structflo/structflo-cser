@@ -25,7 +25,7 @@ Usage
 >>> from structflo.cser.weights import resolve_weights
 >>> path = resolve_weights("cser-detector")                     # latest, auto-download
 >>> path = resolve_weights("cser-detector", version="v1.0")     # pin a version
->>> path = resolve_weights("cser-detector", version="/my.pt")   # local file, no download
+>>> path = resolve_weights("cser-detector", version="/my.safetensors")  # local file
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ def resolve_weights(
     model: str,
     version: str | Path | None = None,
 ) -> Path:
-    """Return a local path to a ``.pt`` weights file for *model*.
+    """Return a local path to a weights file (``.safetensors`` / ``.pt``) for *model*.
 
     Parameters
     ----------
@@ -193,7 +193,7 @@ def resolve_weights(
     Returns
     -------
     Path
-        Absolute path to the resolved ``.pt`` file.
+        Absolute path to the resolved weights file.
 
     Raises
     ------
@@ -215,7 +215,7 @@ def resolve_weights(
             return candidate
         # Looks like a path but doesn't exist on disk
         s = str(version)
-        if "/" in s or "\\" in s or s.endswith(".pt"):
+        if "/" in s or "\\" in s or s.endswith((".pt", ".safetensors")):
             raise WeightsNotFoundError(f"Weights file not found: {candidate}")
 
     # --- Case 2: version tag (or None → LATEST) -----------------------------
@@ -224,7 +224,7 @@ def resolve_weights(
     if tag is None:
         raise WeightsNotFoundError(
             f"No weights have been published yet for model '{model}'.  "
-            f"Pass an explicit local path:  version='/path/to/best.pt'"
+            f"Pass an explicit local path:  version='/path/to/best.safetensors'"
         )
 
     model_registry = REGISTRY[model]
@@ -300,7 +300,12 @@ def weight_info(model: str, version: str | Path | None = None) -> dict:
     # Explicit local path (existing file, or path-like that simply isn't on disk).
     if version is not None:
         s = str(version)
-        if Path(version).exists() or "/" in s or "\\" in s or s.endswith(".pt"):
+        if (
+            Path(version).exists()
+            or "/" in s
+            or "\\" in s
+            or s.endswith((".pt", ".safetensors"))
+        ):
             out["source"] = "local"
             out["version"] = s
             return out

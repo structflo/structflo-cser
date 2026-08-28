@@ -1,12 +1,22 @@
-"""YOLO inference with tiled detection, per-class NMS, and visualisation."""
+"""Detector inference: full-image / tiled detection, visualisation, ``sf-detect`` CLI.
+
+Backend: D-FINE via HuggingFace ``transformers`` (Apache-2.0) — see
+:mod:`structflo.cser.inference.dfine`. The public seam is unchanged from the
+retired YOLO backend: ``detect_full(model, img, conf, imgsz)`` and
+``detect_tiled(model, img, ...)`` return ``[{"bbox": [x1, y1, x2, y2],
+"conf": float, "class_id": int}, ...]`` in original-image pixels, so the
+pipeline, matchers and offline scripts are backend-agnostic.
+"""
+
+from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from ultralytics import YOLO
 
+from structflo.cser.inference.dfine import DFineDetector
 from structflo.cser.inference.nms import nms
 from structflo.cser.inference.pairing import centroid, pair_detections
 from structflo.cser.inference.tiling import generate_tiles
@@ -16,27 +26,55 @@ CLASS_NAMES = {0: "structure", 1: "label"}
 CLASS_COLORS = {0: (0, 200, 0), 1: (0, 100, 255)}  # green, blue
 
 
+def load_detector(
+    weights: str | Path | None = None,
+    *,
+    device: str | None = None,
+    imgsz: int = 1280,
+) -> DFineDetector:
+    """Resolve *weights* (version tag, local ``.safetensors`` path, or ``None`` for
+    the latest published) and load the detector."""
+    path = resolve_weights("cser-detector", version=weights)
+    return DFineDetector.from_file(path, device=device, imgsz=imgsz)
+
+
+def detect_full(
+    model: DFineDetector, img: np.ndarray, conf: float = 0.3, imgsz: int = 1280
+) -> list[dict]:
+    """Run the detector on a single full image (no tiling).
+
+    ``imgsz`` defaults to 1280, the training resolution: the page is
+    letterboxed so its long side is 1280 px. Lower values markedly degrade
+    label recall on large pages (see scripts/finetune/lps/diag_label_recall.py).
+    """
+    return model.predict(img, conf=conf, imgsz=imgsz)
+
+
 def detect_tiled(
-    model: YOLO,
+    model: DFineDetector,
     img: np.ndarray,
     tile_size: int = 1536,
     overlap: float = 0.20,
     conf: float = 0.3,
     nms_iou: float = 0.5,
 ) -> list[dict]:
-    """Run YOLO inference across overlapping tiles and merge with per-class NMS."""
+    """Run the detector across overlapping tiles and merge with per-class NMS.
+
+    Kept for very dense pages; full-image detection at imgsz=1280 is the
+    default and outperforms tiling on ordinary pages (labels get cut at tile
+    boundaries).
+    """
     h, w = img.shape[:2]
     tiles = generate_tiles(w, h, tile_size, overlap)
     all_boxes, all_scores, all_classes = [], [], []
 
     for x1, y1, x2, y2 in tiles:
         tile = img[y1:y2, x1:x2]
-        results = model(tile, imgsz=tile_size, conf=conf, verbose=False)[0]
-        for box in results.boxes:
-            bx1, by1, bx2, by2 = box.xyxy[0].cpu().numpy()
+        for d in model.predict(tile, conf=conf, imgsz=tile_size):
+            bx1, by1, bx2, by2 = d["bbox"]
             all_boxes.append([bx1 + x1, by1 + y1, bx2 + x1, by2 + y1])
-            all_scores.append(float(box.conf[0]))
-            all_classes.append(int(box.cls[0]))
+            all_scores.append(d["conf"])
+            all_classes.append(d["class_id"])
 
     if not all_boxes:
         return []
@@ -60,29 +98,6 @@ def detect_tiled(
         }
         for i in keep
     ]
-
-
-def detect_full(
-    model: YOLO, img: np.ndarray, conf: float = 0.3, imgsz: int = 1280
-) -> list[dict]:
-    """Run YOLO inference on a single full image (no tiling).
-
-    ``imgsz`` defaults to 1280 to match the detector's training resolution.
-    Leaving it at the ultralytics default (640) markedly degrades recall and
-    box localisation on large pages (see scripts/finetune/lps/diag_label_recall.py).
-    """
-    results = model(img, conf=conf, imgsz=imgsz, verbose=False)[0]
-    out = []
-    for box in results.boxes:
-        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-        out.append(
-            {
-                "bbox": [float(x1), float(y1), float(x2), float(y2)],
-                "conf": float(box.conf[0]),
-                "class_id": int(box.cls[0]),
-            }
-        )
-    return out
 
 
 def draw_boxes(
@@ -125,7 +140,7 @@ def draw_boxes(
 
 
 def process_image(
-    model: YOLO,
+    model: DFineDetector,
     image_path: Path,
     out_dir: Path,
     tile: bool,
@@ -196,13 +211,15 @@ def process_image(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="YOLO compound panel detection")
+    p = argparse.ArgumentParser(
+        description="Chemical structure / compound-label detection"
+    )
     p.add_argument("--image", help="Single image (PNG/JPG)")
     p.add_argument("--image_dir", help="Directory of images")
     p.add_argument(
         "--weights",
         default=None,
-        help="Weights version tag (e.g. v1.0) or path to a local .pt file. "
+        help="Weights version tag (e.g. v1.0) or path to a local .safetensors file. "
         "Defaults to the latest published weights (auto-downloaded).",
     )
     p.add_argument(
@@ -211,16 +228,18 @@ def main() -> None:
     p.add_argument(
         "--conf", type=float, default=0.3, help="Detection confidence threshold"
     )
-    p.add_argument("--tile_size", type=int, default=1536)
     p.add_argument(
         "--imgsz",
         type=int,
         default=1280,
-        help="Inference resolution for full-image (no-tile) detection",
+        help="Inference resolution for full-image detection (long side, letterboxed)",
     )
     p.add_argument(
-        "--no_tile", action="store_true", help="Run on full image instead of tiling"
+        "--tile",
+        action="store_true",
+        help="Sliding-window tiling instead of full-image detection (dense pages only)",
     )
+    p.add_argument("--tile_size", type=int, default=1536)
     p.add_argument(
         "--rescale_dpi",
         type=int,
@@ -230,7 +249,7 @@ def main() -> None:
     p.add_argument(
         "--grayscale",
         action="store_true",
-        help="Convert image to grayscale before detection",
+        help="Convert image to grayscale before detection (matches the pipeline)",
     )
     p.add_argument(
         "--pair",
@@ -249,17 +268,16 @@ def main() -> None:
         p.error("Provide --image or --image_dir")
 
     try:
-        weights = resolve_weights("cser-detector", version=args.weights)
-    except (FileNotFoundError, RuntimeError) as e:
+        model = load_detector(args.weights, imgsz=args.imgsz)
+    except (FileNotFoundError, RuntimeError, ValueError) as e:
         p.error(str(e))
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    model = YOLO(str(weights))
-    print(f"Loaded weights: {weights}")
+    print(f"Loaded weights: {model.meta.get('init', '')} {args.weights or '(latest)'}")
     print(
-        f"Tiling: {'disabled' if args.no_tile else f'tile_size={args.tile_size}, overlap=20%'}"
+        f"Tiling: {f'tile_size={args.tile_size}, overlap=20%' if args.tile else 'disabled (full image)'}"
     )
     print(f"Conf threshold: {args.conf}  |  Grayscale: {args.grayscale}\n")
 
@@ -275,7 +293,7 @@ def main() -> None:
                 model,
                 path,
                 out_dir,
-                tile=not args.no_tile,
+                tile=args.tile,
                 tile_size=args.tile_size,
                 conf=args.conf,
                 imgsz=args.imgsz,
