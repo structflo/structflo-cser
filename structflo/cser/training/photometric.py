@@ -465,14 +465,15 @@ _WORDS = (
 )
 
 
-def overlay(x: Array, rng: random.Random) -> Array:
+def overlay(x: Array, rng: random.Random, kind: str | None = None) -> Array:
+    """Translucent rectangles (``kind="rect"``) or a rotated watermark word (``kind="text"``)."""
     g = _gray(x)
     h, w = g.shape
-    if rng.random() < 0.5:  # translucent rectangles
+    kind = kind or ("rect" if rng.random() < 0.5 else "text")
+    if kind == "rect":
         for _ in range(rng.randint(1, 2)):
             area = rng.uniform(0.05, 0.4)
-            rw, rh = int(math.sqrt(area * w * h * rng.uniform(0.5, 2.0))), 0
-            rw = min(w, max(1, rw))
+            rw = min(w, max(1, int(math.sqrt(area * w * h * rng.uniform(0.5, 2.0)))))
             rh = min(h, max(1, int(area * w * h / rw)))
             x0, y0 = rng.randint(0, max(0, w - rw)), rng.randint(0, max(0, h - rh))
             a = rng.uniform(0.25, 0.7)
@@ -484,24 +485,24 @@ def overlay(x: Array, rng: random.Random) -> Array:
             g[y0 : y0 + rh, x0 : x0 + rw] = (1 - a) * g[
                 y0 : y0 + rh, x0 : x0 + rw
             ] + a * c
-    else:  # rotated watermark text
-        canvas = np.zeros((h, w), dtype=np.float32)
+    else:
+        canvas = np.zeros((h, w), dtype=np.uint8)  # OpenCV text drawing needs uint8
         word = rng.choice(_WORDS)
-        scale = (
-            h * rng.uniform(0.4, 1.2) / 30.0
+        scale = max(
+            0.5, h * rng.uniform(0.4, 1.2) / 30.0
         )  # Hershey glyph height ≈ 30 px at scale 1
         thick = max(2, int(scale * 2))
         (tw, th), _ = cv2.getTextSize(word, cv2.FONT_HERSHEY_SIMPLEX, scale, thick)
         org = (max(0, (w - tw) // 2), min(h - 1, (h + th) // 2))
         cv2.putText(
-            canvas, word, org, cv2.FONT_HERSHEY_SIMPLEX, scale, 1.0, thick, cv2.LINE_AA
+            canvas, word, org, cv2.FONT_HERSHEY_SIMPLEX, scale, 255, thick, cv2.LINE_AA
         )
         ang = rng.uniform(20.0, 45.0) * (1 if rng.random() < 0.5 else -1)
         rot = cv2.getRotationMatrix2D((w / 2, h / 2), ang, 1.0)
-        canvas = cv2.warpAffine(canvas, rot, (w, h))
+        mask = cv2.warpAffine(canvas, rot, (w, h)).astype(np.float32) / 255.0
         a = rng.uniform(0.10, 0.35)
-        c = 0.0 if not _is_dark(g) else 255.0
-        g = g * (1 - a * canvas) + a * canvas * c
+        c = 255.0 if _is_dark(g) else 0.0
+        g = g * (1 - a * mask) + a * mask * c
     return _pack(g, x)
 
 

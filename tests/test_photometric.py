@@ -14,7 +14,9 @@ def _page(h=120, w=200):
     x = np.full((h, w, 3), 255, dtype=np.uint8)
     x[30:60, 40:120] = 0  # "structure" ink
     x[70:80, 40:80] = 0  # "label" ink
-    x[95:110, 150:190] = 128  # a mid-tone patch so gamma / contrast variants are not identities
+    x[95:110, 150:190] = (
+        128  # a mid-tone patch so gamma / contrast variants are not identities
+    )
     return x
 
 
@@ -72,6 +74,14 @@ def test_cards_are_anchored_on_structures_and_do_not_slice_labels():
         )  # label fully in or fully out of the card
         hits += int(m[30:60, 40:120].any())
     assert hits > 0
+
+
+@pytest.mark.parametrize("kind", ("rect", "text"))
+def test_both_overlay_kinds_run_on_light_and_dark_pages(kind):
+    for page in (_page(), ph.fixed_variant("invert")(_page())):
+        y = ph.overlay(page, random.Random(4), kind=kind)
+        assert y.dtype == np.uint8 and y.shape == page.shape
+        assert (y[..., 0] != page[..., 0]).any()
 
 
 @pytest.mark.parametrize("kind", ph.LUM_KINDS)
