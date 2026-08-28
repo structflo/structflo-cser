@@ -54,8 +54,14 @@ def _do_match(m, dets, img, name):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", type=Path, default=Path("/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data"))
-    ap.add_argument("--manifest", type=Path, default=Path("data/finetune/real_split.json"))
+    ap.add_argument(
+        "--src",
+        type=Path,
+        default=Path("/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data"),
+    )
+    ap.add_argument(
+        "--manifest", type=Path, default=Path("data/finetune/real_split.json")
+    )
     ap.add_argument(
         "--detector",
         type=Path,
@@ -64,7 +70,9 @@ def main():
     )
     ap.add_argument("--lps", type=Path, default=Path("runs/lps_finetune/best.pt"))
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch_det/best.pt"))
-    ap.add_argument("--margin", type=float, default=2.0, help="relational dustbin margin for Part B")
+    ap.add_argument(
+        "--margin", type=float, default=2.0, help="relational dustbin margin for Part B"
+    )
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument(
         "--label-conf",
@@ -91,7 +99,13 @@ def main():
     }
 
     # accumulators
-    A = {n: {s: dict(lab=0, lab_ok=0, unlab=0, unlab_ok=0, npred=0, pred_ok=0) for s in SPLITS} for n in matchers}
+    A = {
+        n: {
+            s: dict(lab=0, lab_ok=0, unlab=0, unlab_ok=0, npred=0, pred_ok=0)
+            for s in SPLITS
+        }
+        for n in matchers
+    }
     B = {n: {s: dict(tp=0, npred=0) for s in SPLITS} for n in matchers}
     gt_pairs = {s: 0 for s in SPLITS}
 
@@ -113,12 +127,20 @@ def main():
         true_label = {}
         gt_dets = []
         for e in entries:
-            gt_dets.append(Detection.from_dict({"bbox": e["struct_bbox"], "conf": 1.0, "class_id": 0}))
+            gt_dets.append(
+                Detection.from_dict(
+                    {"bbox": e["struct_bbox"], "conf": 1.0, "class_id": 0}
+                )
+            )
             true_label[_key(e["struct_bbox"])] = (
                 _key(e["label_bbox"]) if e.get("label_bbox") is not None else None
             )
             if e.get("label_bbox") is not None:
-                gt_dets.append(Detection.from_dict({"bbox": e["label_bbox"], "conf": 1.0, "class_id": 1}))
+                gt_dets.append(
+                    Detection.from_dict(
+                        {"bbox": e["label_bbox"], "conf": 1.0, "class_id": 1}
+                    )
+                )
         has_label = any(d.class_id == 1 for d in gt_dets)
 
         img_l = np.array(Image.open(ip).convert("L"))
@@ -127,7 +149,9 @@ def main():
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
         # Run the detector at the lower of the two thresholds, then keep each class by its own conf:
         # structures >= --conf, labels >= --label-conf (per-class gating for Part B).
-        dets = detect_full(model, img_rgb, conf=min(args.conf, label_conf), imgsz=args.imgsz)
+        dets = detect_full(
+            model, img_rgb, conf=min(args.conf, label_conf), imgsz=args.imgsz
+        )
         det_dets = []
         for d in dets:
             cls = int(d["class_id"])
@@ -135,8 +159,15 @@ def main():
             if cf < (label_conf if cls == 1 else args.conf):
                 continue
             x1, y1, x2, y2 = d["bbox"]
-            det_dets.append(Detection.from_dict({"bbox": [float(x1), float(y1), float(x2), float(y2)],
-                                                 "conf": cf, "class_id": cls}))
+            det_dets.append(
+                Detection.from_dict(
+                    {
+                        "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                        "conf": cf,
+                        "class_id": cls,
+                    }
+                )
+            )
         labelled = [e for e in entries if e.get("label_bbox") is not None]
 
         for tgt in (split, "all"):
@@ -148,7 +179,10 @@ def main():
                 if name == "Relational":
                     m.dustbin_margin = 0.0
                 pairs = _do_match(m, gt_dets, img_l, name)
-                matched = {_key(p.structure.bbox.as_list()): _key(p.label.bbox.as_list()) for p in pairs}
+                matched = {
+                    _key(p.structure.bbox.as_list()): _key(p.label.bbox.as_list())
+                    for p in pairs
+                }
                 for tgt in (split, "all"):
                     a = A[name][tgt]
                     a["npred"] += len(pairs)
@@ -205,7 +239,9 @@ def main():
             print(f"    {n:>11} | {assign:>7.1%} {reject:>7.1%} {prec:>7.1%}")
 
     print("\n" + "=" * 70)
-    print(f"PART B — end-to-end full@{args.imgsz} (struct conf {args.conf}, label conf {label_conf}) → pairing F1 (centroid; Relational margin={args.margin})")
+    print(
+        f"PART B — end-to-end full@{args.imgsz} (struct conf {args.conf}, label conf {label_conf}) → pairing F1 (centroid; Relational margin={args.margin})"
+    )
     print("=" * 70)
     for s in SPLITS:
         print(f"\n  [{s.upper()}]  GT pairs={gt_pairs[s]}")

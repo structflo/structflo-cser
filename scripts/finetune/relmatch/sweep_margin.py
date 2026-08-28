@@ -62,18 +62,36 @@ def cache_pages(model_det, relmodel, gt_dir, img_dir, conf, imgsz, device):
                 l_conf.append(float(d["conf"]))
         gt_pairs = sum(1 for e in entries if e.get("label_bbox") is not None)
         if not s_boxes or not l_boxes:
-            pages.append({"entries": entries, "Z": None, "s_boxes": s_boxes,
-                          "l_boxes": l_boxes, "gt_pairs": gt_pairs})
+            pages.append(
+                {
+                    "entries": entries,
+                    "Z": None,
+                    "s_boxes": s_boxes,
+                    "l_boxes": l_boxes,
+                    "gt_pairs": gt_pairs,
+                }
+            )
             continue
         boxes = s_boxes + l_boxes
         classes = [0] * len(s_boxes) + [1] * len(l_boxes)
         confs = s_conf + l_conf
-        nodes = torch.from_numpy(node_features(boxes, classes, confs, page_w, page_h)).to(device)
-        is_struct = torch.tensor([True] * len(s_boxes) + [False] * len(l_boxes), device=device)
+        nodes = torch.from_numpy(
+            node_features(boxes, classes, confs, page_w, page_h)
+        ).to(device)
+        is_struct = torch.tensor(
+            [True] * len(s_boxes) + [False] * len(l_boxes), device=device
+        )
         with torch.no_grad():
             Z = relmodel(nodes, is_struct).cpu().numpy()
-        pages.append({"entries": entries, "Z": Z, "s_boxes": s_boxes,
-                      "l_boxes": l_boxes, "gt_pairs": gt_pairs})
+        pages.append(
+            {
+                "entries": entries,
+                "Z": Z,
+                "s_boxes": s_boxes,
+                "l_boxes": l_boxes,
+                "gt_pairs": gt_pairs,
+            }
+        )
     return pages
 
 
@@ -131,12 +149,19 @@ def main():
     cache = {}
     for split in ("val", "real_test"):
         cache[split] = cache_pages(
-            det, relmodel, args.base / split / "ground_truth",
-            args.base / split / "images", args.conf, args.imgsz, device,
+            det,
+            relmodel,
+            args.base / split / "ground_truth",
+            args.base / split / "images",
+            args.conf,
+            args.imgsz,
+            device,
         )
 
     margins = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
-    print(f"{'margin':>7} | {'val P':>6} {'val R':>6} {'val F1':>6} | {'test P':>6} {'test R':>6} {'test F1':>7}")
+    print(
+        f"{'margin':>7} | {'val P':>6} {'val R':>6} {'val F1':>6} | {'test P':>6} {'test R':>6} {'test F1':>7}"
+    )
     print("-" * 60)
     best_m, best_vf = 0.0, -1.0
     rows = {}
@@ -146,10 +171,14 @@ def main():
         rows[m] = (tp, tr, tf)
         if vf > best_vf:
             best_vf, best_m = vf, m
-        print(f"{m:>7.1f} | {vp:>6.3f} {vr:>6.3f} {vf:>6.3f} | {tp:>6.3f} {tr:>6.3f} {tf:>7.3f}")
+        print(
+            f"{m:>7.1f} | {vp:>6.3f} {vr:>6.3f} {vf:>6.3f} | {tp:>6.3f} {tr:>6.3f} {tf:>7.3f}"
+        )
     tp, tr, tf = rows[best_m]
     print("-" * 60)
-    print(f"best margin by VAL F1 = {best_m}  →  REAL_TEST  P {tp:.3f}  R {tr:.3f}  F1 {tf:.3f}")
+    print(
+        f"best margin by VAL F1 = {best_m}  →  REAL_TEST  P {tp:.3f}  R {tr:.3f}  F1 {tf:.3f}"
+    )
 
 
 if __name__ == "__main__":
