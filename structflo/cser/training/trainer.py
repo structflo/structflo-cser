@@ -528,6 +528,21 @@ def build_parser() -> argparse.ArgumentParser:
         "letterbox — robustness to lower-DPI renders / other rasterisers",
     )
     p.add_argument(
+        "--photometric-aug",
+        type=float,
+        default=0.0,
+        help="probability of a sampled luminance/polarity scenario (inversion, regional "
+        "inversion, background/ink contrast, gradients) per training page — see "
+        "training/photometric.py",
+    )
+    p.add_argument(
+        "--val-variants",
+        nargs="*",
+        default=[],
+        help="deterministic photometric variants of the val split (e.g. invert invert_grey) "
+        "added to checkpoint selection: fitness = mean over plain val + variants",
+    )
+    p.add_argument(
         "--max-train-images", type=int, default=None, help="debug: cap training set"
     )
     p.add_argument(
