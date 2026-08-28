@@ -186,7 +186,7 @@ def main():
               f"p10 {np.percentile(ts,10):.3f}  p25 {np.percentile(ts,25):.3f}  <0.5: {(ts<0.5).mean():.1%}")
         print(f"  MARGIN (true-runner): mean {mg.mean():.3f}  median {np.median(mg):.3f}  <=0 (mis-ranked): {(mg<=0).mean():.1%}")
         print(f"  true-score hist [0..1 /0.1]: {_hist(ts, edges)}")
-        print(f"  ASSIGNMENT (labelled structs):")
+        print("  ASSIGNMENT (labelled structs):")
         print(f"    independent argmax correct : {a['argmax_correct']/n:.1%}")
         print(f"    LPS Hungarian correct      : {a['lps_correct']/n:.1%}  ({a['lps_correct']}/{n})")
         print(f"      threshold-miss (true but <{args.min_score}): {a['thresh_miss']/n:.1%}  ({a['thresh_miss']})")

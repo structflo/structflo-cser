@@ -17,7 +17,7 @@ for S in $SEEDS; do
   out=$CLOG/eval_real_s$S.txt
   if is_done "$out"; then echo "[skip] real s$S"; continue; fi
   banner "real e2e @ label-conf 0.10 -- s$S"
-  uv run python $EC --detector $REPRO/detector/finetuned_s$S/best.pt \
+  uv run python $EC --detector $REPRO/detector/finetuned_s$S/best.safetensors \
     --lps $REPRO/lps_ft_s$S/best.pt --relmatch "$(relmatch_for $S)" \
     --imgsz 1280 --conf 0.3 --label-conf 0.10 --margin 2.0 2>&1 | tee "$out"
 done
@@ -29,7 +29,7 @@ for S in $SEEDS; do
   if is_done "$out"; then echo "[skip] synth s$S"; continue; fi
   banner "synth e2e @ label-conf 0.10 -- s$S"
   uv run python $EC --src data/generated_test/val --manifest $REPRO/synth_test_manifest.json \
-    --detector $REPRO/detector/base_synth_s$S/best.pt \
+    --detector $REPRO/detector/base_synth_s$S/best.safetensors \
     --lps $REPRO/lps_synth_s$S/best.pt --relmatch $REPRO/relmatch_synth_s$S/best.pt \
     --imgsz 1280 --conf 0.3 --label-conf 0.10 2>&1 | tee "$out"
 done

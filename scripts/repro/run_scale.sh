@@ -7,6 +7,8 @@
 #
 # Curve points N (real docs): 0 (synthetic-only base, reused) .. 830 (full FT, reused);
 # only the middle points are trained here. Idempotent (.done markers + completion-grep).
+# Detector = D-FINE (sf-train); fine-tune recipe env-overridable:
+#   FT_EPOCHS (30) / FT_LR (5e-5) / FT_BACKBONE_LR (5e-6) / FT_BATCH (8) / TRAIN_EXTRA
 #
 #   setsid nohup bash scripts/repro/run_scale.sh >> runs/repro/logs/scale_driver.log 2>&1 </dev/null &
 set -uo pipefail
@@ -26,24 +28,31 @@ REAL_TEST_YAML="data/finetune/yolo/data_real_test.yaml"
 LPS_REAL_TEST="data/finetune/lps/real_test"
 REAL_SRC="/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data"
 EC_ALL="scripts/finetune/relmatch/eval_compare_all.py"
+FT_EPOCHS="${FT_EPOCHS:-30}"
+FT_LR="${FT_LR:-5e-5}"
+FT_BACKBONE_LR="${FT_BACKBONE_LR:-5e-6}"
+FT_BATCH="${FT_BATCH:-8}"
+TRAIN_EXTRA="${TRAIN_EXTRA:-}"
 
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 banner() { echo; echo "[$(ts)] === $* ==="; }
 done_marker() { [ -f "$1" ] && grep -q "$2" "$1" 2>/dev/null; }
 have() { [ -f "$1" ]; }
 
-# eval_point <N> <S> <detector.pt> <lps.pt> — run the 3 metrics for one curve point.
+# eval_point <N> <S> <detector.safetensors> <lps.pt> — run the 3 metrics for one curve point.
 eval_point() {
     local N="$1" S="$2" det="$3" lps="$4" relm="$REPRO/relmatch_det_s$2/best.pt"
-    # (a) detector mAP50 on frozen real test @1280
+    # (a) detector mAP50 on frozen real test @1280 (operating-point P/R at conf 0.3)
     local out="$SLOG/point_n${N}_s${S}_detval.log"
     if done_marker "$out" "DETVAL"; then echo "[skip] detval n$N s$S"; else
         banner "detector mAP50  n=$N s=$S"
         uv run python - "$det" "$REAL_TEST_YAML" <<'PY' 2>&1 | tee "$out"
 import sys
-from ultralytics import YOLO
-m = YOLO(sys.argv[1]).val(data=sys.argv[2], imgsz=1280, verbose=False)
-print(f"DETVAL mAP50={m.box.map50:.4f} mAP50_95={m.box.map:.4f} P={m.box.mp:.4f} R={m.box.mr:.4f}", flush=True)
+from structflo.cser.inference.detector import load_detector
+from structflo.cser.inference.evaluate import evaluate_detector_on_yaml
+r = evaluate_detector_on_yaml(load_detector(sys.argv[1], imgsz=1280), sys.argv[2], key="val", imgsz=1280, op_conf=0.3)
+a = r["all"]
+print(f"DETVAL mAP50={a['mAP50']:.4f} mAP50_95={a['mAP50-95']:.4f} P={a['P']:.4f} R={a['R']:.4f}", flush=True)
 PY
     fi
     # (b) LPS pair-classification accuracy on frozen real test
@@ -64,22 +73,26 @@ PY
 for S in $SEEDS; do
     banner "SCALE SEED $S"
     # ---- endpoint N=0: synthetic-only base ----
-    eval_point 0 "$S" "$REPRO/detector/base_synth_s$S/best.pt" "$REPRO/lps_synth_s$S/best.pt"
+    eval_point 0 "$S" "$REPRO/detector/base_synth_s$S/best.safetensors" "$REPRO/lps_synth_s$S/best.pt"
 
     # ---- middle points: train then eval ----
     for N in $NS_MID; do
         uv run python scripts/repro/prepare_scale_subset.py --n "$N" --seed "$S" >/dev/null
 
         det_dst="$SCALE/det_n${N}_s${S}"
-        if [ -f "$det_dst/.done" ]; then echo "[skip] FT detector n$N s$S"; else
-            banner "FT detector  n=$N s=$S (warm-start base_synth_s$S)"
+        # .done alone is not enough: a marker left by the retired YOLO backend has no best.safetensors.
+        if [ -f "$det_dst/.done" ] && [ -f "$det_dst/best.safetensors" ]; then echo "[skip] FT detector n$N s$S"; else
+            banner "FT detector  n=$N s=$S (D-FINE, ${FT_EPOCHS}ep, warm-start base_synth_s$S)"
             rm -rf "runs/labels_detect/scale_det_n${N}_s${S}"
-            SEED="$S" RUN_NAME="scale_det_n${N}_s${S}" EPOCHS=25 \
-                DATA_YAML="$PROJECT_ROOT/data/finetune/scale/yolo_n${N}_s${S}/data.yaml" \
-                CHECKPOINT="$PROJECT_ROOT/$REPRO/detector/base_synth_s$S/best.pt" \
-                bash scripts/finetune/yolo/train.sh 2>&1 | tee "$TLOG/det_n${N}_s${S}.log"
+            # shellcheck disable=SC2086
+            uv run sf-train --data "$PROJECT_ROOT/data/finetune/scale/yolo_n${N}_s${S}/data.yaml" \
+                --init "$REPRO/detector/base_synth_s$S/best.safetensors" \
+                --imgsz 1280 --batch "$FT_BATCH" --epochs "$FT_EPOCHS" \
+                --lr "$FT_LR" --backbone-lr "$FT_BACKBONE_LR" --seed "$S" \
+                --project runs/labels_detect --name "scale_det_n${N}_s${S}" --exist-ok $TRAIN_EXTRA \
+                2>&1 | tee "$TLOG/det_n${N}_s${S}.log"
             mkdir -p "$det_dst"
-            cp -f "runs/labels_detect/scale_det_n${N}_s${S}/weights/best.pt" "$det_dst/best.pt"
+            cp -f "runs/labels_detect/scale_det_n${N}_s${S}/weights/best.safetensors" "$det_dst/best.safetensors"
             cp -f "runs/labels_detect/scale_det_n${N}_s${S}/results.csv" "$det_dst/results.csv" 2>/dev/null || true
             touch "$det_dst/.done"
         fi
@@ -93,11 +106,11 @@ for S in $SEEDS; do
             touch "$lps_dst/.done"
         fi
 
-        eval_point "$N" "$S" "$det_dst/best.pt" "$lps_dst/best.pt"
+        eval_point "$N" "$S" "$det_dst/best.safetensors" "$lps_dst/best.pt"
     done
 
     # ---- endpoint N=830: full fine-tune (reuse main repro checkpoints) ----
-    eval_point 830 "$S" "$REPRO/detector/finetuned_s$S/best.pt" "$REPRO/lps_ft_s$S/best.pt"
+    eval_point 830 "$S" "$REPRO/detector/finetuned_s$S/best.safetensors" "$REPRO/lps_ft_s$S/best.pt"
 done
 
 banner "SCALE SWEEP COMPLETE (seeds: $SEEDS; N: 0 $NS_MID 830)"

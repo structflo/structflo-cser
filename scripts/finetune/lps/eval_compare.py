@@ -187,16 +187,16 @@ def main() -> None:
     if "finetuned" in rt and "finetuned" in sv:
         real_delta = rt["finetuned"]["Accuracy"] - rt["baseline"]["Accuracy"]
         synth_delta = sv["finetuned"]["Accuracy"] - sv["baseline"]["Accuracy"]
-        print(f"\n  Verdict:")
+        print("\n  Verdict:")
         print(f"    Real-data accuracy delta    : {real_delta:+.2%}")
         print(f"    Synthetic accuracy delta    : {synth_delta:+.2%}")
         if real_delta > 0.005 and synth_delta > -0.01:
-            print(f"    --> Fine-tuning helped on real data with no synthetic regression")
+            print("    --> Fine-tuning helped on real data with no synthetic regression")
         elif real_delta > 0.005 and synth_delta <= -0.01:
-            print(f"    --> Fine-tuning helped on real data BUT regressed on synthetic")
-            print(f"        Consider reducing REAL_OVERSAMPLE or increasing N_SYNTH_TRAIN")
+            print("    --> Fine-tuning helped on real data BUT regressed on synthetic")
+            print("        Consider reducing REAL_OVERSAMPLE or increasing N_SYNTH_TRAIN")
         elif real_delta <= 0.005:
-            print(f"    --> Minimal effect on real data — may need more annotations or epochs")
+            print("    --> Minimal effect on real data — may need more annotations or epochs")
 
     print()
 

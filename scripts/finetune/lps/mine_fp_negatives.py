@@ -1,6 +1,6 @@
 """Mine detector false-positive structures as LPS rejection negatives.
 
-Runs the fine-tuned YOLO over the (real) training pages, finds structure
+Runs the fine-tuned D-FINE detector over the (real) training pages, finds structure
 detections that do NOT correspond to any ground-truth structure (IoU < 0.5),
 keeps the ones near a label (the informative adjacent-distractor case), and
 writes them to ``<train>/fp_negatives/<stem>.json`` as a list of [x1,y1,x2,y2].
@@ -16,7 +16,7 @@ transfers). Caveat acknowledged.
 Usage:
     uv run python scripts/finetune/lps/mine_fp_negatives.py \
         --train-dir data/finetune/lps/train \
-        --detector runs/labels_detect/finetune_3way/weights/best.pt
+        --detector runs/labels_detect/dfine_l_plus/weights/best.safetensors
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from structflo.cser.inference.detector import detect_tiled
+from structflo.cser.inference.detector import detect_tiled, load_detector
 
 IOU_GT = 0.5          # detection counts as a real structure if IoU >= this
 NEAR_LABEL_PX = 1000  # keep FP only if within this px of some label centroid
@@ -58,15 +58,14 @@ def _min_label_dist(box, label_cents) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--train-dir", type=Path, default=Path("data/finetune/lps/train"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/dfine_l_plus/weights/best.safetensors"),
+                    help="D-FINE .safetensors checkpoint (or a published version tag)")
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--real-only", action="store_true", default=True,
                     help="Only mine pages whose name contains '_real' (default).")
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=1280)
     gt_dir = args.train_dir / "ground_truth"
     img_dir = args.train_dir / "images"
     out_dir = args.train_dir / "fp_negatives"

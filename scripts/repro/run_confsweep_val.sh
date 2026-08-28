@@ -15,7 +15,7 @@ for S in $SEEDS; do
     is_done "$out" && { echo "[skip] s$S c$C"; continue; }
     echo "=== val sweep s$S label-conf $C ==="
     uv run python $EC --manifest "$MAN" \
-      --detector $REPRO/detector/finetuned_s$S/best.pt --lps $REPRO/lps_ft_s$S/best.pt \
+      --detector $REPRO/detector/finetuned_s$S/best.safetensors --lps $REPRO/lps_ft_s$S/best.pt \
       --relmatch "$(relmatch_for $S)" --imgsz 1280 --conf 0.3 --label-conf "$C" --margin 2.0 \
       2>&1 | tee "$out"
   done

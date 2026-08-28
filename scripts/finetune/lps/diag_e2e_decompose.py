@@ -1,7 +1,7 @@
 """Decompose the end-to-end pair F1: is it detection-limited or matching-limited,
 and how much does the strict IoU>=0.5-on-the-label criterion deflate it?
 
-Reports, on real_test with real YOLO detections:
+Reports, on real_test with real detector (D-FINE) output:
   - structure vs LABEL detection recall (IoU 0.5 and 0.3)
   - pair P/R/F1 under three correctness criteria:
       strict   : struct IoU>=0.5 AND label IoU>=0.5         (the eval_end2end criterion)
@@ -21,7 +21,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from structflo.cser.inference.detector import detect_tiled
+from structflo.cser.inference.detector import detect_full, detect_tiled, load_detector
 from structflo.cser.lps.matcher import LearnedMatcher
 from structflo.cser.pipeline.matcher import HungarianMatcher
 from structflo.cser.pipeline.models import Detection
@@ -56,7 +56,8 @@ def _recall(gt_boxes, det_boxes, thr):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data/finetune/lps/real_test"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/dfine_l_plus/weights/best.safetensors"),
+                    help="D-FINE .safetensors checkpoint (or a published version tag)")
     ap.add_argument("--lps", type=Path, default=Path("runs/lps_finetune/best.pt"))
     ap.add_argument("--min-score", type=float, default=0.5)
     ap.add_argument("--conf", type=float, default=0.3)
@@ -65,21 +66,14 @@ def main():
                     help="detection strategy")
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=1280)
 
     def run_detect(img_np):
         if args.mode == "tiled":
             return detect_tiled(model, img_np, tile_size=1536, conf=args.conf)
         imgsz = {"full640": 640, "full1280": 1280, "full2048": 2048}[args.mode]
-        res = model(img_np, conf=args.conf, imgsz=imgsz, verbose=False)[0]
-        out = []
-        for box in res.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-            out.append({"bbox": [float(x1), float(y1), float(x2), float(y2)],
-                        "conf": float(box.conf[0]), "class_id": int(box.cls[0])})
-        return out
+        return detect_full(model, img_np, conf=args.conf, imgsz=imgsz)
+
     hung = HungarianMatcher()
     lps = LearnedMatcher(weights=str(args.lps), min_score=args.min_score)
 
@@ -115,7 +109,8 @@ def main():
         labelled = [e for e in entries if e.get("label_bbox") is not None]
         gt_pairs_total += len(labelled)
 
-        s_gt += len(gt_s); l_gt += len(gt_l)
+        s_gt += len(gt_s)
+        l_gt += len(gt_l)
         s_det5 += sum(any(_iou(g, d) >= 0.5 for d in det_s) for g in gt_s)
         s_det3 += sum(any(_iou(g, d) >= 0.3 for d in det_s) for g in gt_s)
         l_det5 += sum(any(_iou(g, d) >= 0.5 for d in det_l) for g in gt_l)
@@ -170,7 +165,8 @@ def main():
     for mname in ("Hungarian", "LPS"):
         print(f"=== {mname} ===")
         for c in ("strict", "iou0.3", "centroid"):
-            tp = crit[c][mname]["tp"]; npred = crit[c][mname]["np"]
+            tp = crit[c][mname]["tp"]
+            npred = crit[c][mname]["np"]
             P = tp / npred if npred else 0.0
             R = tp / gt_pairs_total if gt_pairs_total else 0.0
             F = 2 * P * R / (P + R) if (P + R) else 0.0

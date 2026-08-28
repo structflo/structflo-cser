@@ -1,7 +1,7 @@
-"""End-to-end matcher evaluation on REAL YOLO detections (no ground-truth boxes).
+"""End-to-end matcher evaluation on REAL detector output (no ground-truth boxes).
 
-This is the deployment-realistic test. Detection runs with the fine-tuned YOLO
-(tiled), so the detections include localisation error, missed boxes, and — the
+This is the deployment-realistic test. Detection runs with the fine-tuned
+D-FINE detector (tiled), so the detections include localisation error, missed boxes, and — the
 case of interest — false-positive structure detections that may land next to a
 label. Hungarian must force-match those; a visual matcher (LPS) could reject them.
 
@@ -12,7 +12,7 @@ IoU >= 0.5 on both the structure and the label box.
 Usage:
     uv run python scripts/finetune/lps/eval_end2end.py \
         --data-dir data/finetune/lps/real_test \
-        --detector runs/labels_detect/finetune_3way/weights/best.pt \
+        --detector runs/labels_detect/dfine_l_plus/weights/best.safetensors \
         --lps runs/lps_finetune/best.pt
 """
 
@@ -25,7 +25,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from structflo.cser.inference.detector import detect_tiled
+from structflo.cser.inference.detector import detect_tiled, load_detector
 from structflo.cser.lps.matcher import LearnedMatcher
 from structflo.cser.pipeline.matcher import HungarianMatcher
 from structflo.cser.pipeline.models import Detection
@@ -66,15 +66,14 @@ def _score(pairs, entries) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data/finetune/lps/real_test"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/dfine_l_plus/weights/best.safetensors"),
+                    help="D-FINE .safetensors checkpoint (or a published version tag)")
     ap.add_argument("--lps", type=Path, default=Path("runs/lps_finetune/best.pt"))
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--device", default="cuda")
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=1280)
     hung = HungarianMatcher()
     lps = LearnedMatcher(weights=str(args.lps), min_score=0.0, device=args.device)
 

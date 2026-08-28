@@ -1,12 +1,19 @@
 """Bound the effect of swapping the PDF rasteriser (PyMuPDF → pypdfium2) on detection.
 
+LEGACY TOOL — intentionally imports PyMuPDF (fitz) and ultralytics, which are no longer
+project dependencies. It was run once, before the migration, in an environment that still had
+both (`uv run --with pymupdf --with ultralytics`); its result lives in
+runs/license_migration/eval/render_agreement.json (agreement F1 0.951 @144 dpi / 0.963 @150 dpi).
+
 GT-free: for N staging PDFs, render the page with BOTH engines at the same dpi, run the
 detector on both renders, and measure how well the two detection sets agree (same-class
-IoU>=0.5 greedy matching at the conf operating point). Run while PyMuPDF is still installed.
+IoU>=0.5 greedy matching at the conf operating point).
 """
 from __future__ import annotations
 
-import argparse, json, random
+import argparse
+import json
+import random
 from pathlib import Path
 
 import numpy as np
@@ -45,7 +52,9 @@ def _agree(a: list, b: list, thr: float = 0.5) -> tuple[int, int, int, list]:
         for i in np.argsort([-x[1] for x in A]):
             cand = [j for j in np.argsort(-ious[i]) if j not in used and ious[i, j] >= thr]
             if cand:
-                used.add(cand[0]); matched += 1; dconf.append(abs(A[i][1] - B[cand[0]][1]))
+                used.add(cand[0])
+                matched += 1
+                dconf.append(abs(A[i][1] - B[cand[0]][1]))
     return matched, len(a), len(b), dconf
 
 
@@ -81,11 +90,15 @@ def main() -> None:
             if fz.size != pf.size:
                 size_mismatch += 1
                 continue
-            a = np.asarray(fz.convert("L"), dtype=np.int16); b = np.asarray(pf.convert("L"), dtype=np.int16)
+            a = np.asarray(fz.convert("L"), dtype=np.int16)
+            b = np.asarray(pf.convert("L"), dtype=np.int16)
             pix_diff.append(float((np.abs(a - b) > 32).mean()))
             da, db = _dets(model, fz, args.conf, args.imgsz), _dets(model, pf, args.conf, args.imgsz)
             m, na, nb, dc = _agree(da, db)
-            tot_m += m; tot_a += na; tot_b += nb; dconfs += dc
+            tot_m += m
+            tot_a += na
+            tot_b += nb
+            dconfs += dc
             same_count += int(na == nb)
             if n_pages % 50 == 0:
                 print(f"[{dpi} dpi] {n_pages}/{len(pdfs)}", flush=True)

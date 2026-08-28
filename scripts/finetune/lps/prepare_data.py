@@ -15,7 +15,7 @@ Prerequisite:
     uv run python scripts/finetune/yolo/prepare_data.py   # writes real_split.json
 
 Usage:
-    uv run python scripts/finetune/lps/prepare_data.py
+    uv run python scripts/finetune/lps/prepare_data.py --yes
 """
 
 from __future__ import annotations
@@ -103,6 +103,17 @@ def _populate_clean(pairs: list[tuple[Path, Path]], out: Path) -> None:
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description=(__doc__ or "").strip().splitlines()[0],
+        epilog="DESTRUCTIVE: rebuilds the output directory and rewrites the split manifest. "
+        "Refuses to run without --yes (so `--help`/imports never touch data).",
+    )
+    ap.add_argument("--yes", action="store_true", help="really rebuild (deletes and recreates the output dir)")
+    if not ap.parse_args().yes:
+        ap.error("refusing to rebuild the fine-tune data without --yes")
+
     random.seed(SEED)
 
     if not SPLIT_MANIFEST.exists():

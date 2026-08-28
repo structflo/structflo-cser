@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from structflo.cser.inference.detector import detect_full, load_detector
 from structflo.cser.lps.matcher import LearnedMatcher
 from structflo.cser.pipeline.matcher import HungarianMatcher
 from structflo.cser.pipeline.models import Detection
@@ -55,7 +56,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--src", type=Path, default=Path("/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data"))
     ap.add_argument("--manifest", type=Path, default=Path("data/finetune/real_split.json"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument(
+        "--detector",
+        type=Path,
+        default=None,
+        help="detector weights (.safetensors; default: latest published)",
+    )
     ap.add_argument("--lps", type=Path, default=Path("runs/lps_finetune/best.pt"))
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch_det/best.pt"))
     ap.add_argument("--margin", type=float, default=2.0, help="relational dustbin margin for Part B")
@@ -77,9 +83,7 @@ def main():
         for stem in manifest.get(sp, []):
             stem2split[stem] = sp
 
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=args.imgsz)
     matchers = {
         "Hungarian": HungarianMatcher(),
         "LPS": LearnedMatcher(weights=str(args.lps), min_score=0.5),
@@ -119,18 +123,18 @@ def main():
 
         img_l = np.array(Image.open(ip).convert("L"))
 
-        # ---- Part B inputs: detections (one YOLO pass) ----
+        # ---- Part B inputs: detections (one detector pass) ----
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
-        # Run YOLO at the lower of the two thresholds, then keep each class by its own conf:
+        # Run the detector at the lower of the two thresholds, then keep each class by its own conf:
         # structures >= --conf, labels >= --label-conf (per-class gating for Part B).
-        res = model(img_rgb, conf=min(args.conf, label_conf), imgsz=args.imgsz, verbose=False)[0]
+        dets = detect_full(model, img_rgb, conf=min(args.conf, label_conf), imgsz=args.imgsz)
         det_dets = []
-        for box in res.boxes:
-            cls = int(box.cls[0])
-            cf = float(box.conf[0])
+        for d in dets:
+            cls = int(d["class_id"])
+            cf = float(d["conf"])
             if cf < (label_conf if cls == 1 else args.conf):
                 continue
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+            x1, y1, x2, y2 = d["bbox"]
             det_dets.append(Detection.from_dict({"bbox": [float(x1), float(y1), float(x2), float(y2)],
                                                  "conf": cf, "class_id": cls}))
         labelled = [e for e in entries if e.get("label_bbox") is not None]

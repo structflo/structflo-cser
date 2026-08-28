@@ -39,8 +39,8 @@ have() { [ -f "$1" ]; }   # checkpoint present?
 
 for S in $SEEDS; do
     banner "SEED $S"
-    BASE="$DET/base_synth_s$S/best.pt"
-    FT="$DET/finetuned_s$S/best.pt"
+    BASE="$DET/base_synth_s$S/best.safetensors"
+    FT="$DET/finetuned_s$S/best.safetensors"
 
     # ---------- §A synthetic matching (Table 2) ----------
     out="$ELOG/eval_synth_s$S.txt"

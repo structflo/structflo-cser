@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Refresh the PUBLISHED det-trained relational matcher on the new corpus, matched to the
-# new detector. Caches the finetune_plus detector's boxes over the data/finetune/plus
+# new detector. Caches the dfine_l_plus detector's boxes over the data/finetune/plus
 # corpus, retrains relmatch_det on them, then re-evaluates the full refreshed trio
 # (detector + LPS + relational) on the FROZEN real test set.
 #
@@ -12,7 +12,7 @@ cd "$PROJECT_ROOT"
 S=42
 RLOG="runs/repro/logs/relmatch_plus"
 mkdir -p "$RLOG"
-DET="runs/labels_detect/finetune_plus/weights/best.pt"
+DET="${DET:-runs/labels_detect/dfine_l_plus/weights/best.safetensors}"   # D-FINE real fine-tune (run_finetune_plus.sh)
 LPS="runs/lps_finetune_plus/best.pt"
 DETDATA="data/finetune/relmatch_det_plus"
 OUT="runs/relmatch_det_plus"
@@ -21,7 +21,7 @@ banner() { echo; echo "[$(ts)] === $* ==="; }
 
 # 1. cache detection boxes (new detector over the new corpus train+val)
 if [ -f "$DETDATA/.done" ]; then echo "[skip] det-box caching"; else
-    banner "cache det boxes (finetune_plus detector over data/finetune/plus/lps)"
+    banner "cache det boxes (dfine_l_plus detector over data/finetune/plus/lps)"
     uv run python scripts/finetune/relmatch/prepare_det_data.py \
         --src data/finetune/plus/lps --detector "$DET" --out "$DETDATA" \
         --conf 0.3 --imgsz 1280 2>&1 | tee "$RLOG/prep.log"

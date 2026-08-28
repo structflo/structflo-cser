@@ -17,6 +17,7 @@ import torch
 from PIL import Image
 from scipy.optimize import linear_sum_assignment
 
+from structflo.cser.inference.detector import detect_full, load_detector
 from structflo.cser.relmatch.features import node_features
 from structflo.cser.relmatch.model import load_checkpoint
 
@@ -49,16 +50,16 @@ def cache_pages(model_det, relmodel, gt_dir, img_dir, conf, imgsz, device):
         entries = json.loads(gtf.read_text())
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
         page_h, page_w = img_rgb.shape[:2]
-        res = model_det(img_rgb, conf=conf, imgsz=imgsz, verbose=False)[0]
+        dets = detect_full(model_det, img_rgb, conf=conf, imgsz=imgsz)
         s_boxes, s_conf, l_boxes, l_conf = [], [], [], []
-        for box in res.boxes:
-            x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].cpu().numpy())
-            if int(box.cls[0]) == 0:
+        for d in dets:
+            x1, y1, x2, y2 = (float(v) for v in d["bbox"])
+            if int(d["class_id"]) == 0:
                 s_boxes.append([x1, y1, x2, y2])
-                s_conf.append(float(box.conf[0]))
+                s_conf.append(float(d["conf"]))
             else:
                 l_boxes.append([x1, y1, x2, y2])
-                l_conf.append(float(box.conf[0]))
+                l_conf.append(float(d["conf"]))
         gt_pairs = sum(1 for e in entries if e.get("label_bbox") is not None)
         if not s_boxes or not l_boxes:
             pages.append({"entries": entries, "Z": None, "s_boxes": s_boxes,
@@ -112,16 +113,19 @@ def score(pages, margin):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", type=Path, default=Path("data/finetune/lps"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument(
+        "--detector",
+        type=Path,
+        default=None,
+        help="detector weights (.safetensors; default: latest published)",
+    )
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch_det/best.pt"))
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--imgsz", type=int, default=1280)
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    det = YOLO(str(args.detector))
+    det = load_detector(args.detector, imgsz=args.imgsz)
     relmodel, _ = load_checkpoint(args.relmatch, device=device)
 
     cache = {}

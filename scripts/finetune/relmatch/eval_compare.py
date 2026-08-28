@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from structflo.cser.inference.detector import detect_full, load_detector
 from structflo.cser.lps.matcher import LearnedMatcher
 from structflo.cser.pipeline.matcher import HungarianMatcher
 from structflo.cser.pipeline.models import Detection
@@ -108,12 +109,11 @@ def part_b(matchers, model, gt_dir, img_dir, conf, imgsz):
         if not ip.exists():
             continue
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
-        res = model(img_rgb, conf=conf, imgsz=imgsz, verbose=False)[0]
         dets = []
-        for box in res.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
+        for d in detect_full(model, img_rgb, conf=conf, imgsz=imgsz):
+            x1, y1, x2, y2 = d["bbox"]
             dets.append(Detection.from_dict({"bbox": [float(x1), float(y1), float(x2), float(y2)],
-                                             "conf": float(box.conf[0]), "class_id": int(box.cls[0])}))
+                                             "conf": float(d["conf"]), "class_id": int(d["class_id"])}))
         labelled = [e for e in entries if e.get("label_bbox") is not None]
         gt_pairs += len(labelled)
         img_l = np.array(Image.open(ip).convert("L"))
@@ -140,7 +140,12 @@ def part_b(matchers, model, gt_dir, img_dir, conf, imgsz):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data/finetune/lps/real_test"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument(
+        "--detector",
+        type=Path,
+        default=None,
+        help="detector weights (.safetensors; default: latest published)",
+    )
     ap.add_argument("--lps", type=Path, default=Path("runs/lps_finetune/best.pt"))
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch/best.pt"))
     ap.add_argument("--conf", type=float, default=0.3)
@@ -174,9 +179,7 @@ def main():
     print("=" * 64)
     print(f"PART B — end-to-end full@{args.imgsz} detection → pairing F1 (centroid)")
     print("=" * 64)
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=args.imgsz)
     stat, gt_pairs = part_b(matchers, model, gt_dir, img_dir, args.conf, args.imgsz)
     print(f"  GT pairs = {gt_pairs}")
     print(f"  {'matcher':>11} | {'P':>7} {'R':>7} {'F1':>7}")

@@ -11,7 +11,8 @@ Usage:
 """
 from __future__ import annotations
 
-import argparse, json
+import argparse
+import json
 from pathlib import Path
 
 import numpy as np
@@ -56,12 +57,14 @@ def coco_crosscheck(images: list[ImageEval]) -> dict:
     coco = COCO()
     coco.dataset = gt
     coco.createIndex()
-    import contextlib, io
+    import contextlib
+    import io
     with contextlib.redirect_stdout(io.StringIO()):
         cdt = coco.loadRes(dt)
         ev = COCOeval(coco, cdt, "bbox")
         ev.params.maxDets = [1, 10, 1000]
-        ev.evaluate(); ev.accumulate()
+        ev.evaluate()
+        ev.accumulate()
     # precision: [T iou, R recall, K class, A area, M maxDets]; read area=all, maxDets=1000 directly
     # (COCOeval.summarize() reports -1 for AP@[.5:.95] when maxDets is customised).
     prec = ev.eval["precision"][:, :, :, 0, 2]
