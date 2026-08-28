@@ -132,15 +132,33 @@ improved.
 
 **Learned-matcher recalibration.** The relational matcher's node feature 8 is the detector
 confidence and the published v0.2 was trained on YOLO v0.4 boxes at conf 0.3, so it was
-re-trained on the new detector's boxes (`recalibrate_relmatch.sh`; det cache
-`data/finetune/relmatch_det_dfine_c*_s42`). On the same D-FINE detections the recalibrated
-matcher is **not** better than v0.2 (intermediate detector @0.5: test 0.798 vs 0.809, val 0.742
-vs 0.746; margin sweep on val prefers `dustbin_margin=0.0`, the shipped default, over the paper's
-2.0). All three matchers sit within noise of Hungarian on this detector, consistent with the
-paper's multi-seed finding that they are statistically tied. The recalibration on the final
-detector at conf 0.4 is reported in the tables below where present; the practical recommendation
-is to keep `HungarianMatcher`/`RelationalMatcher` as they are and treat the matcher choice as a
-tie.
+re-trained on the new detector's boxes three times (`recalibrate_relmatch.sh`; caches
+`data/finetune/relmatch_det_dfine_c*_s42`; the final detector's cache has 0.8 % false-positive
+structures and 58 missed labels vs 2.5 % / 406 for YOLO). On identical D-FINE detections the
+recalibrated matcher is **not** better than the published v0.2 (e2e F1, held-out real_test, as-shipped
+`dustbin_margin=0.0`):
+
+| detections | published v0.2 | recalibrated on final detector @0.4 |
+|---|---|---|
+| D-FINE v1.0 @ 0.4, full res | 0.814 | 0.809 |
+| D-FINE v1.0 @ 0.5, full res | 0.825 | 0.808 |
+| D-FINE v1.0 @ 0.4, 0.48× input (deployment regime) | 0.806 | 0.811 |
+| D-FINE v1.0 @ 0.5, 0.48× input | 0.823 | 0.812 |
+| real_val @ 0.4 / 0.5 | 0.708 / 0.725 | 0.729 / 0.719 |
+
+Margin sweeps on real_val prefer `dustbin_margin=0.0` (the shipped default) over the paper's 2.0
+for every recalibrated variant. All three matchers sit within noise of Hungarian on this detector,
+consistent with the paper's multi-seed finding that they are statistically tied. Recommendation:
+keep `RelationalMatcher` with the published v0.2 weights and margin 0.0 as the default; no
+`cser-relmatcher` republish is needed for the migration (its provenance — trained on YOLO
+*outputs* as data — was assessed as not AGPL-encumbered in the licence audit).
+
+**Deployment regime (landscape slides rendered at 144 dpi, emulated by 0.48× input).** docu-store
+processes landscape slide decks, i.e. exactly the annotated corpus's document type, so real_test
+is in-domain. e2e F1 with the shipped default matcher: YOLO 0.837 (@0.3) vs D-FINE 0.806 (@0.4) /
+0.823 (@0.5); Hungarian 0.823 vs 0.796 / 0.812. The difference at conf 0.5 is inside the
+100-page test noise (±0.02–0.03); at 0.4 it is borderline — a case for setting the default
+operating point to 0.5 for this consumer (val cannot separate 0.4 from 0.5).
 
 Synthetic test (1 000 pages): mAP50 0.995 / mAP50-95 0.976 (YOLO 0.995 / 0.931). Latency
 17 ms/page (bf16) vs 12.5 ms — both negligible next to DECIMER.
