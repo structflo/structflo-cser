@@ -9,6 +9,7 @@ Usage:
     uv run python scripts/license_migration/e2e_from_preds.py \
         --preds runs/license_migration/preds/yolo_v0.4/real_test.json --split test
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,17 +46,37 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--preds", type=Path, required=True)
     ap.add_argument("--split", default="test", choices=["test", "val", "train"])
-    ap.add_argument("--manifest", type=Path, default=Path("data/finetune/real_split.json"))
-    ap.add_argument("--gt-dir", type=Path, default=Path("/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data/ground_truth"))
-    ap.add_argument("--images-dir", type=Path, default=None, help="default: data/finetune/yolo/real_<split>/images")
-    ap.add_argument("--lps", default=None, help="LPS weights (default: registry latest)")
-    ap.add_argument("--relmatch", default=None, help="relational weights (default: registry latest)")
+    ap.add_argument(
+        "--manifest", type=Path, default=Path("data/finetune/real_split.json")
+    )
+    ap.add_argument(
+        "--gt-dir",
+        type=Path,
+        default=Path(
+            "/net-fs-ins/shared-docker-vols/structflo-cser-annotate/data/ground_truth"
+        ),
+    )
+    ap.add_argument(
+        "--images-dir",
+        type=Path,
+        default=None,
+        help="default: data/finetune/yolo/real_<split>/images",
+    )
+    ap.add_argument(
+        "--lps", default=None, help="LPS weights (default: registry latest)"
+    )
+    ap.add_argument(
+        "--relmatch", default=None, help="relational weights (default: registry latest)"
+    )
     ap.add_argument("--margin", type=float, default=2.0)
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--label-conf", type=float, default=None)
-    ap.add_argument("--lps-pin-conf", action="store_true",
-                    help="feed the LPS matcher conf=1.0 for every detection (its training-time value; "
-                         "features 12/13 were constant 1.0 in GT training) instead of live detector scores")
+    ap.add_argument(
+        "--lps-pin-conf",
+        action="store_true",
+        help="feed the LPS matcher conf=1.0 for every detection (its training-time value; "
+        "features 12/13 were constant 1.0 in GT training) instead of live detector scores",
+    )
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
     label_conf = args.label_conf if args.label_conf is not None else args.conf
@@ -65,12 +86,18 @@ def main() -> None:
     preds = json.loads(args.preds.read_text())
     missing = stems - set(preds["images"])
     if missing:
-        raise SystemExit(f"{len(missing)} split stems missing from preds (e.g. {sorted(missing)[:3]})")
+        raise SystemExit(
+            f"{len(missing)} split stems missing from preds (e.g. {sorted(missing)[:3]})"
+        )
 
     matchers = {
         "Hungarian": HungarianMatcher(),
-        "LPS": LearnedMatcher(weights=str(args.lps or resolve_weights("cser-lps")), min_score=0.5),
-        "Relational": RelationalMatcher(weights=str(args.relmatch or resolve_weights("cser-relmatcher"))),
+        "LPS": LearnedMatcher(
+            weights=str(args.lps or resolve_weights("cser-lps")), min_score=0.5
+        ),
+        "Relational": RelationalMatcher(
+            weights=str(args.relmatch or resolve_weights("cser-relmatcher"))
+        ),
     }
     matchers["Relational"].dustbin_margin = args.margin
     B = {n: dict(tp=0, npred=0) for n in matchers}
@@ -82,7 +109,8 @@ def main() -> None:
         gt_pairs += len(labelled)
         rec = preds["images"][stem]
         dets = [
-            Detection.from_dict(d) for d in rec["dets"]
+            Detection.from_dict(d)
+            for d in rec["dets"]
             if d["conf"] >= (label_conf if d["class_id"] == 1 else args.conf)
         ]
         n_struct += sum(d.class_id == 0 for d in dets)
@@ -111,16 +139,32 @@ def main() -> None:
                 if gl is not None and bv >= 0.5 and _inside(_cent(gl), pl):
                     B[name]["tp"] += 1
 
-    print(f"{args.preds} [{args.split}: {len(stems)} pages, GT pairs={gt_pairs}; dets kept: {n_struct} struct, {n_label} label @ conf {args.conf}/{label_conf}]")
+    print(
+        f"{args.preds} [{args.split}: {len(stems)} pages, GT pairs={gt_pairs}; dets kept: {n_struct} struct, {n_label} label @ conf {args.conf}/{label_conf}]"
+    )
     print(f"  {'matcher':>11} | {'P':>7} {'R':>7} {'F1':>7}")
-    result = {"preds": str(args.preds), "split": args.split, "conf": args.conf, "label_conf": label_conf, "lps_pin_conf": args.lps_pin_conf, "gt_pairs": gt_pairs, "matchers": {}}
+    result = {
+        "preds": str(args.preds),
+        "split": args.split,
+        "conf": args.conf,
+        "label_conf": label_conf,
+        "lps_pin_conf": args.lps_pin_conf,
+        "gt_pairs": gt_pairs,
+        "matchers": {},
+    }
     for n in matchers:
         b = B[n]
         P = b["tp"] / max(b["npred"], 1)
         R = b["tp"] / max(gt_pairs, 1)
         F = 2 * P * R / (P + R) if (P + R) else 0.0
         print(f"  {n:>11} | {P:7.3f} {R:7.3f} {F:7.3f}")
-        result["matchers"][n] = {"P": P, "R": R, "F1": F, "tp": b["tp"], "npred": b["npred"]}
+        result["matchers"][n] = {
+            "P": P,
+            "R": R,
+            "F1": F,
+            "tp": b["tp"],
+            "npred": b["npred"],
+        }
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(result, indent=2))
