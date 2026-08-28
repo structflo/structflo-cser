@@ -134,7 +134,20 @@ class DFineDetector:
             )
         config = DFineConfig.from_dict(json.loads(meta["config"]))
         model = DFineForObjectDetection(config)
-        model.load_state_dict(load_file(str(path)), strict=True)
+        state = load_file(str(path))
+        # Denoising groups are training-only; a checkpoint trained with them off (our default)
+        # may still carry the unused embedding if the model was built before the config change.
+        state = {
+            k: v
+            for k, v in state.items()
+            if "denoising_class_embed" not in k or config.num_denoising > 0
+        }
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        missing = [k for k in missing if "denoising_class_embed" not in k]
+        if missing or unexpected:
+            raise RuntimeError(
+                f"checkpoint/config mismatch in {path}: missing={missing[:5]} unexpected={unexpected[:5]}"
+            )
         kw.setdefault("imgsz", int(meta.get("imgsz", 1280)))
         return cls(model, meta=meta, **kw)
 
