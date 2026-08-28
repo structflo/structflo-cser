@@ -320,6 +320,7 @@ def train(args: argparse.Namespace) -> Path:
         "lr",
         "img_s",
         "fitness",
+        "fitness_plain",
         "mAP50",
         "mAP50-95",
         "P",
@@ -395,7 +396,14 @@ def train(args: argparse.Namespace) -> Path:
                     f"struct R {vres[0].recall:.3f}  label R {vres[1].recall:.3f}",
                     flush=True,
                 )
-            fit = float(sum(fits) / len(fits))
+            plain_fit = fits[0]
+            fit = (
+                1.0 - args.val_variant_weight
+            ) * plain_fit + args.val_variant_weight * float(
+                sum(fits[1:]) / len(fits[1:])
+            )
+            row["fitness_plain"] = plain_fit
+        row.setdefault("fitness_plain", fitness(res["all"]))
         row.update(
             epoch=epoch + 1,
             train_loss=train_loss,
@@ -534,6 +542,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="probability of a sampled luminance/polarity scenario (inversion, regional "
         "inversion, background/ink contrast, gradients) per training page — see "
         "training/photometric.py",
+    )
+    p.add_argument(
+        "--val-variant-weight",
+        type=float,
+        default=0.5,
+        help="selection fitness = (1-w)*plain val + w*mean(variants); plain fitness is logged too",
     )
     p.add_argument(
         "--val-variants",

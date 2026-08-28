@@ -135,7 +135,7 @@ class YoloDetectionDataset(Dataset):
         h, w = arr.shape[:2]
         boxes, classes = load_yolo_labels(self.labels_dir / f"{path.stem}.txt", w, h)
         if self.transform is not None:
-            arr = self.transform(arr, boxes)
+            arr = self.transform(arr, boxes, classes)
         if (
             self.augment
             and self.photometric_aug > 0

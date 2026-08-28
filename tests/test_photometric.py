@@ -1,4 +1,4 @@
-"""Photometric augmentation: shapes, ranges, determinism, coverage of every family."""
+"""Photometric augmentation: shapes, ranges, determinism, coverage of every family, box-awareness."""
 
 from __future__ import annotations
 
@@ -12,32 +12,66 @@ from structflo.cser.training import photometric as ph
 
 def _page(h=120, w=200):
     x = np.full((h, w, 3), 255, dtype=np.uint8)
-    x[30:60, 40:120] = 0  # some "ink"
+    x[30:60, 40:120] = 0  # "structure" ink
+    x[70:80, 40:80] = 0  # "label" ink
+    x[95:110, 150:190] = 128  # a mid-tone patch so gamma / contrast variants are not identities
     return x
 
 
-@pytest.mark.parametrize("fn", [ph.full_inversion, ph.gradient, ph.luminance_contrast])
+BOXES = np.array([[40, 30, 120, 60], [40, 70, 80, 80]], dtype=float)
+CLASSES = np.array([0, 1])
+
+
+@pytest.mark.parametrize(
+    "fn", [ph.full_inversion, ph.gradient, ph.luminance_contrast, ph.overlay]
+)
 def test_families_keep_shape_dtype_range(fn):
     x = _page()
     y = fn(x, random.Random(1))
     assert y.shape == x.shape and y.dtype == np.uint8
-    assert (y[..., 0] == y[..., 1]).all() and (
-        y[..., 0] == y[..., 2]
-    ).all()  # stays grayscale-RGB
+    assert (y[..., 0] == y[..., 1]).all() and (y[..., 0] == y[..., 2]).all()
 
 
 def test_full_inversion_makes_background_dark_and_ink_light():
-    y = ph.full_inversion(_page(), random.Random(0))
-    assert y[0, 0, 0] <= 60 and y[45, 80, 0] >= 180
+    for seed in range(20):
+        y = ph.full_inversion(_page(), random.Random(seed))
+        bg, ink = int(np.median(y[..., 0])), int(np.median(y[35:55, 50:110, 0]))
+        assert bg <= 110 + 50 and ink - bg >= 80 - 50  # texture may add ±50
 
 
 @pytest.mark.parametrize("kind", ph.REGION_KINDS)
 def test_every_region_kind_inverts_only_inside_its_mask(kind):
     x = _page()
-    boxes = np.array([[40, 30, 120, 60]], dtype=float)
-    y = ph.regional_inversion(x, random.Random(3), boxes=boxes, kind=kind)
+    y = ph.regional_inversion(
+        x, random.Random(3), boxes=BOXES, classes=CLASSES, kind=kind
+    )
     changed = y[..., 0] != x[..., 0]
     assert changed.any() and not changed.all()
+
+
+@pytest.mark.parametrize(
+    "kind", ("rects", "title_band", "footer_band", "sidebar", "rows")
+)
+def test_region_seams_never_cut_through_a_gt_box(kind):
+    for seed in range(30):
+        rng = random.Random(seed)
+        m = ph._region_mask(120, 200, kind, BOXES, CLASSES, rng)
+        for x1, y1, x2, y2 in BOXES.astype(int):
+            inside = m[y1:y2, x1:x2]
+            assert inside.all() or not inside.any(), (kind, seed)
+
+
+def test_cards_are_anchored_on_structures_and_do_not_slice_labels():
+    hits = 0
+    for seed in range(60):
+        rng = random.Random(seed)
+        m = ph._card_mask(120, 200, BOXES, CLASSES, rng)
+        lab = m[70:80, 40:80]
+        assert lab.all() or not lab.any(), (
+            seed
+        )  # label fully in or fully out of the card
+        hits += int(m[30:60, 40:120].any())
+    assert hits > 0
 
 
 @pytest.mark.parametrize("kind", ph.LUM_KINDS)
@@ -46,27 +80,61 @@ def test_every_luminance_kind_runs(kind):
     assert y.dtype == np.uint8 and y.shape == (120, 200, 3)
 
 
-def test_scenarios_cover_all_four_families_and_never_touch_boxes():
+def test_luminance_never_lightens_ink_on_a_dark_page():
+    dark = ph.fixed_variant("invert")(_page())
+    for seed in range(40):
+        y = ph.luminance_contrast(dark, random.Random(seed))
+        assert np.median(y[..., 0]) < 200  # ink_lighten is excluded on dark pages
+
+
+def test_ink_attenuate_pulls_box_ink_towards_background_only_inside_boxes():
+    x = _page()
+    y = ph.ink_attenuate(x, random.Random(0), BOXES, CLASSES, alpha=0.4)
+    assert y[45, 80, 0] > 100  # ink inside a box lifted towards white
+    outside = y[..., 0] != x[..., 0]
+    outside[30:60, 40:120] = False
+    outside[70:80, 40:80] = False
+    assert not outside.any()
+
+
+def test_card_tint_shifts_background_but_not_ink():
+    x = _page()
+    y = ph.card_tint(x, random.Random(2), BOXES, CLASSES)
+    assert (y[..., 0] != x[..., 0]).any()
+    assert y[45, 80, 0] <= 5  # ink stays black
+
+
+def test_scenarios_cover_every_family_and_never_touch_boxes():
     ops_seen = set()
-    boxes = np.array([[40, 30, 120, 60]], dtype=float)
-    for seed in range(300):
-        y, ops = ph.photometric_augment(_page(), random.Random(seed), boxes)
+    boxes = BOXES.copy()
+    for seed in range(600):
+        y, ops = ph.photometric_augment(_page(), random.Random(seed), boxes, CLASSES)
         ops_seen.update(ops)
         assert y.shape == (120, 200, 3) and y.dtype == np.uint8
-    assert ops_seen == {"invert", "regional", "lum", "gradient"}
-    assert boxes.tolist() == [[40, 30, 120, 60]]  # augmentation is purely photometric
+    assert ops_seen == set(ph.OPS)
+    assert np.array_equal(boxes, BOXES)
 
 
 def test_scenario_probabilities_sum_to_one():
     assert abs(sum(p for p, _ in ph.SCENARIOS) - 1.0) < 1e-9
 
 
-@pytest.mark.parametrize("name", ph.VARIANT_NAMES)
+@pytest.mark.parametrize("name", ph.VARIANT_NAMES + ph.HELDOUT_NAMES)
 def test_fixed_variants_are_deterministic(name):
     f = ph.fixed_variant(name)
-    boxes = np.array([[40, 30, 120, 60]], dtype=float)
-    a, b = f(_page(), boxes), f(_page(), boxes)
+    a, b = f(_page(), BOXES, CLASSES), f(_page(), BOXES, CLASSES)
     assert np.array_equal(a, b) and a.dtype == np.uint8 and a.shape == (120, 200, 3)
+    assert not np.array_equal(a, _page())
+
+
+def test_fixed_cards_invert_overlapping_cards_exactly_once():
+    boxes = np.array(
+        [[40, 30, 120, 60], [50, 55, 90, 75]], dtype=float
+    )  # overlapping cards
+    y = ph.fixed_variant("cards")(_page(), boxes, np.array([0, 1]))
+    x = _page()
+    overlap = (slice(55, 60), slice(50, 90))
+    assert np.array_equal(y[overlap][..., 0], 255 - x[overlap][..., 0])
 
 
 def test_dataset_transform_and_photometric_leave_labels_unchanged(tmp_path):
@@ -78,7 +146,7 @@ def test_dataset_transform_and_photometric_leave_labels_unchanged(tmp_path):
     (tmp_path / "labels").mkdir()
     Image.fromarray(_page()).save(tmp_path / "images" / "p.png")
     (tmp_path / "labels" / "p.txt").write_text(
-        "0 0.4 0.375 0.4 0.25\n1 0.8 0.8 0.1 0.05\n"
+        "0 0.4 0.375 0.4 0.25\n1 0.3 0.625 0.2 0.0833\n"
     )
     plain = YoloDetectionDataset(tmp_path / "images", imgsz=128, augment=False)[0]
     inv = YoloDetectionDataset(
