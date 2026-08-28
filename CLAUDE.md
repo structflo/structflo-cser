@@ -138,8 +138,9 @@ ChemPipeline.to_records(pairs)
 - **Input**: grayscale→RGB, letterboxed so the long side is 1280 px (pad 114), pixels/255, no
   mean/std normalisation. Training and inference share `inference/preprocess.py`.
 - **Inference**: full-image at imgsz=1280 is the default (`sf-extract`/`sf-detect` too — `--tile`
-  is opt-in). Scores are per-query sigmoid outputs; no NMS. Tiling (1536px tiles, per-class NMS)
-  remains available for very dense pages but cuts labels at tile boundaries.
+  is opt-in). Scores are per-query sigmoid outputs; no NMS. **Operating point conf = 0.4**
+  (tuned on real_val for D-FINE's score distribution; the retired YOLO used 0.3). Tiling
+  (1536px tiles, per-class NMS) remains available for very dense pages but cuts labels at tile boundaries.
 - **Weights format**: one `.safetensors` file with the HF config JSON in its metadata
   (`format = structflo-cser-dfine-v1`); loaded via `DFineDetector.from_file`. Legacy YOLO `.pt`
   files raise a clear error.
@@ -171,7 +172,7 @@ Weights are versioned independently of the package and stored on HuggingFace Hub
 
 | Model           | HF Repo                          | Latest |
 |-----------------|----------------------------------|--------|
-| cser-detector   | sidxz/structflo-cser-detector    | v0.4   |
+| cser-detector   | sidxz/structflo-cser-detector    | v1.0 (D-FINE; registered, publish pending) — v0.1–v0.4 are retired YOLO checkpoints |
 | cser-lps        | sidxz/structflo-cser-lps         | v0.3   |
 | cser-relmatcher | sidxz/structflo-cser-relmatcher  | v0.2   |
 
@@ -191,10 +192,13 @@ Scripts live in `scripts/finetune/{yolo,lps}/`, each with `prepare_data.py`, `tr
 - Knobs at top of each `prepare_data.py`: `N_SYNTH_TRAIN`, `N_SYNTH_VAL`, `REAL_OVERSAMPLE`, `N_REAL_VAL`
 
 ### Detector fine-tune (`scripts/finetune/yolo/` — directory name kept for history)
-- Two stages: synthetic base `sf-train --data config/data.yaml --init ustc-community/dfine-large-coco`
-  → `runs/labels_detect/dfine_l_synth/weights/best.safetensors`, then real fine-tune
+- Three stages: synthetic base `sf-train --data config/data.yaml --init ustc-community/dfine-large-coco`
+  → `runs/labels_detect/dfine_l_synth/weights/best.safetensors`; real fine-tune
   `sf-train --data data/finetune/plus/yolo/data.yaml --init <base> --lr 5e-5 --backbone-lr 5e-6`
-  → `runs/labels_detect/dfine_l_plus/weights/best.safetensors` (val = real_val, report on real_test)
+  → `runs/labels_detect/dfine_l_plus/weights/best.safetensors`; then a short rasteriser-robustness
+  fine-tune `--init <plus> --lr 2e-5 --backbone-lr 2e-6 --downscale-aug 0.5 --epochs 10`
+  → `runs/labels_detect/dfine_l_plus_ms/weights/best.safetensors` = **cser-detector v1.0**
+  (val = real_val, report on real_test; see docs/LICENSE_MIGRATION.md for the numbers)
 - Compare against the frozen YOLO v0.4 baseline with `scripts/license_migration/{dump_preds,eval_preds,e2e_from_preds}.py`
 
 ### LPS fine-tune

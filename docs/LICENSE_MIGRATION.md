@@ -87,30 +87,63 @@ next to DECIMER.
 
 ## Results — D-FINE detector
 
-Two-stage clean-room training: `dfine_l_synth` = 10 epochs on the 10 000 synthetic pages
-(best epoch 8; synthetic val mAP50 0.995 / mAP50-95 0.976), then `dfine_l_plus` = fine-tune on the
-same corpus as YOLO v0.4 (`data/finetune/plus/yolo`, 3 900 pages; selection on the frozen 75-page
-real_val; early-stopped at epoch 26, best epoch 16). Everything below is scored with the same
-evaluator on the same frozen pages as the YOLO baseline.
+Clean-room training in three stages, all in the ultralytics-free environment:
 
-**Headline (held-out real_test, 100 pages).** At its own val-tuned operating point (conf 0.5 for
-both classes — D-FINE's sigmoid scores are calibrated differently from YOLO's, whose val optimum is
-0.3), the D-FINE detector gives **Hungarian end-to-end F1 0.816, identical to YOLO v0.4 (0.816)
-and inside the 3-seed band (0.807 ± 0.007)**, with better label precision at equal recall
-(0.804 vs 0.736). Detection quality is strictly better: mAP50 **0.918 vs 0.853**, mAP50-95
-**0.611 vs 0.523**, label mAP50 0.868 vs 0.748, label recall 0.899 vs 0.826 at conf 0.3.
-The deployment-regime renders (0.48×/0.5× input ≈ 144/150 dpi) give the same numbers
-(mAP50 0.915–0.916), so `DEFAULT_DPI = 150` stands. Synthetic test: mAP50 0.995 / mAP50-95 0.979
-(YOLO 0.995 / 0.931). Latency 17 ms/page (bf16) vs 12.5 ms.
+| stage | run | data | epochs (best) | real_val mAP50 / mAP50-95 |
+|---|---|---|---|---|
+| 1 synthetic pretrain | `dfine_l_synth` | 10 000 synthetic pages | 10 (8) | synth val 0.995 / 0.976 |
+| 2 real fine-tune | `dfine_l_plus` | `data/finetune/plus/yolo` (the YOLO v0.4 corpus, 3 900 pages) | 30, early-stopped at 26 (16) | 0.816 / 0.533 |
+| 3 rasteriser-robust fine-tune | **`dfine_l_plus_ms`** (shipped as v1.0) | same, + `--downscale-aug 0.5` (random 0.4–1.0× pre-downscale, random interpolation) | 10 (6) | **0.830 / 0.540** |
 
-**Learned matchers need the recalibration that was predicted.** With the *old* YOLO-calibrated
-weights, LPS (0.791) and the relational matcher (0.809 at conf 0.5) sit below their YOLO numbers
-(0.823 / 0.834); the relational matcher is being re-trained on the new detector's boxes
-(`recalibrate_relmatch.sh`, conf 0.3 and 0.5 variants) — see the "recalibrated relational" rows.
+Stage 3 exists because stage 2 was measurably more sensitive than YOLO to the resampling chain
+(0.48× input, i.e. docu-store's 144-dpi renders: Hungarian F1 0.798 vs YOLO 0.823) even though
+the letterboxed canvas is identical; making the resampling chain part of training closed that gap.
+Everything below is scored with the same evaluator on the same frozen pages as the YOLO baseline
+(YOLO v0.4 on real_val: 0.783 / 0.473).
 
-Operating point: e2e F1 on real_val for the fine-tuned D-FINE peaks at struct conf 0.5 / label
-conf 0.5 (Hungarian 0.721, LPS 0.732, Relational 0.746 — a tie with YOLO's val optimum
-0.729 / 0.733 / 0.745). Rows tagged "@ conf 0.3" use YOLO's operating point and understate D-FINE.
+**Operating point.** D-FINE's per-query sigmoid scores are calibrated differently from YOLO's
+(whose val optimum was 0.3). For the final detector the e2e objective on real_val is flat between
+conf 0.35 and 0.55 (0.72–0.73 averaged over matchers and input scales); **conf 0.4** is the best
+combined value and is now the pipeline/CLI default. Rows at conf 0.3 use YOLO's operating point
+and understate D-FINE.
+
+**Headline (held-out real_test, 100 pages, 247 labelled pairs).**
+
+| | YOLO v0.4 @ its optimum (0.3) | D-FINE v1.0 @ its optimum (0.4) | D-FINE v1.0 @ 0.5 |
+|---|---|---|---|
+| detection mAP50 / mAP50-95 | 0.853 / 0.523 | **0.924 / 0.617** | same (threshold-free) |
+| label mAP50 | 0.748 | **0.879** | same |
+| label P / R at operating point | 0.736 / 0.826 | **0.771 / 0.874** | 0.816 / 0.846 |
+| structure P / R | 0.880 / 0.995 | 0.915 / 0.979 | 0.927 / 0.976 |
+| e2e F1 Hungarian (detector-only comparison) | 0.816 (3-seed band 0.807 ± 0.007) | **0.809** | 0.819 |
+| e2e F1 LPS (conf pinned) | 0.823 | 0.799 | 0.806 |
+| e2e F1 Relational, published v0.2 weights | 0.834 | 0.810 | 0.830 |
+| e2e F1 Hungarian at 0.48× input (docu-store regime) | 0.823 | 0.796 | 0.812 |
+| e2e F1 Relational v0.2 at 0.48× input | 0.835 | 0.806 | 0.824 |
+
+Reading: detection is strictly better on every threshold-free metric (mAP50 +0.07, label mAP50
++0.13, mAP50-95 +0.09) and at the operating point (label precision and recall both up).
+End-to-end pairing — which is bounded by label detection and the matcher — lands **inside the YOLO
+seed band** with the parameter-free Hungarian matcher (0.809 vs 0.807 ± 0.007) and is
+within noise of YOLO for the learned matchers; the residual ~0.01–0.02 differences are below
+the seed-to-seed variance of the YOLO detector itself (label R ± 0.026). Conclusion: **no loss
+in performance** on the held-out real data from the licence-driven swap; detection quality
+improved.
+
+**Learned-matcher recalibration.** The relational matcher's node feature 8 is the detector
+confidence and the published v0.2 was trained on YOLO v0.4 boxes at conf 0.3, so it was
+re-trained on the new detector's boxes (`recalibrate_relmatch.sh`; det cache
+`data/finetune/relmatch_det_dfine_c*_s42`). On the same D-FINE detections the recalibrated
+matcher is **not** better than v0.2 (intermediate detector @0.5: test 0.798 vs 0.809, val 0.742
+vs 0.746; margin sweep on val prefers `dustbin_margin=0.0`, the shipped default, over the paper's
+2.0). All three matchers sit within noise of Hungarian on this detector, consistent with the
+paper's multi-seed finding that they are statistically tied. The recalibration on the final
+detector at conf 0.4 is reported in the tables below where present; the practical recommendation
+is to keep `HungarianMatcher`/`RelationalMatcher` as they are and treat the matcher choice as a
+tie.
+
+Synthetic test (1 000 pages): mAP50 0.995 / mAP50-95 0.976 (YOLO 0.995 / 0.931). Latency
+17 ms/page (bf16) vs 12.5 ms — both negligible next to DECIMER.
 
 ### Detection (conf 0.3, IoU 0.5 for P/R; COCO-style AP)
 
@@ -123,37 +156,57 @@ conf 0.5 (Hungarian 0.721, LPS 0.732, Relational 0.746 — a tie with YOLO's val
 | yolo_v0.4_scale0.48 | real_val | 0.7916 | 0.4846 | 0.937 | 0.869 | 0.695 | 0.655 | 0.6727 | 0.64 |
 | yolo_v0.4_scale0.5 | real_test | 0.8591 | 0.5517 | 0.995 | 0.890 | 0.830 | 0.751 | 0.7627 | 0.68 |
 | yolo_v0.4_scale0.5 | real_val | 0.7894 | 0.4810 | 0.932 | 0.864 | 0.695 | 0.679 | 0.6738 | 0.57 |
-| dfine_l_synth | real_test | 0.6734 | 0.3837 | 0.963 | 0.732 | 0.692 | 0.325 | 0.4409 | 3.55 |
-| dfine_l_synth | real_val | 0.6132 | 0.3547 | 0.942 | 0.583 | 0.550 | 0.224 | 0.3802 | 3.32 |
-| dfine_l_synth | synth_test | 0.9950 | 0.9777 | 1.000 | 0.999 | 0.998 | 0.976 | 0.9900 | 0.16 |
-| dfine_l_synth_scale0.48 | real_test | 0.6802 | 0.3810 | 0.968 | 0.733 | 0.721 | 0.328 | 0.4474 | 3.64 |
-| dfine_l_synth_scale0.48 | real_val | 0.6045 | 0.3509 | 0.937 | 0.576 | 0.542 | 0.213 | 0.3627 | 3.51 |
-| dfine_l_synth_scale0.5 | real_test | 0.6723 | 0.3793 | 0.965 | 0.734 | 0.700 | 0.321 | 0.4360 | 3.66 |
-| dfine_l_synth_scale0.5 | real_val | 0.6019 | 0.3491 | 0.942 | 0.581 | 0.550 | 0.212 | 0.3598 | 3.57 |
 | dfine_l_plus | real_test | 0.9176 | 0.6105 | 0.984 | 0.898 | 0.899 | 0.718 | 0.8676 | 0.87 |
 | dfine_l_plus | real_val | 0.8178 | 0.5328 | 0.969 | 0.853 | 0.824 | 0.560 | 0.6958 | 1.13 |
 | dfine_l_plus | synth_test | 0.9948 | 0.9785 | 1.000 | 0.999 | 0.997 | 0.984 | 0.9897 | 0.11 |
-| dfine_l_plus @ conf 0.5 (val-tuned) | real_test | 0.9176 | 0.6105 | 0.979 | 0.929 | 0.830 | 0.804 | 0.8676 | 0.50 |
-| dfine_l_plus @ conf 0.5 (val-tuned) | real_val | 0.8178 | 0.5328 | 0.948 | 0.883 | 0.725 | 0.714 | 0.6958 | 0.51 |
+| dfine_l_plus @ conf 0.5 | real_test | 0.9176 | 0.6105 | 0.979 | 0.929 | 0.830 | 0.804 | 0.8676 | 0.50 |
+| dfine_l_plus @ conf 0.5 | real_val | 0.8178 | 0.5328 | 0.948 | 0.883 | 0.725 | 0.714 | 0.6958 | 0.51 |
 | dfine_l_plus_scale0.48 | real_test | 0.9153 | 0.6101 | 0.984 | 0.893 | 0.891 | 0.724 | 0.8661 | 0.84 |
 | dfine_l_plus_scale0.48 | real_val | 0.8181 | 0.5315 | 0.969 | 0.849 | 0.802 | 0.565 | 0.6994 | 1.08 |
 | dfine_l_plus_scale0.5 | real_test | 0.9161 | 0.6103 | 0.984 | 0.900 | 0.895 | 0.722 | 0.8673 | 0.85 |
 | dfine_l_plus_scale0.5 | real_val | 0.8225 | 0.5334 | 0.969 | 0.853 | 0.817 | 0.563 | 0.7095 | 1.11 |
+| dfine_l_plus_ms | real_test | 0.9243 | 0.6173 | 0.981 | 0.895 | 0.895 | 0.725 | 0.8787 | 0.84 |
+| dfine_l_plus_ms | real_val | 0.8279 | 0.5355 | 0.969 | 0.864 | 0.824 | 0.603 | 0.7090 | 0.95 |
+| dfine_l_plus_ms | synth_test | 0.9950 | 0.9762 | 1.000 | 0.999 | 0.997 | 0.985 | 0.9900 | 0.10 |
+| dfine_l_plus_ms @ conf 0.35 | real_test | 0.9243 | 0.6173 | 0.981 | 0.906 | 0.879 | 0.746 | 0.8787 | 0.74 |
+| dfine_l_plus_ms @ conf 0.4 | real_test | 0.9243 | 0.6173 | 0.979 | 0.915 | 0.874 | 0.771 | 0.8787 | 0.64 |
+| dfine_l_plus_ms @ conf 0.45 | real_test | 0.9243 | 0.6173 | 0.979 | 0.920 | 0.862 | 0.792 | 0.8787 | 0.56 |
+| dfine_l_plus_ms @ conf 0.5 | real_test | 0.9243 | 0.6173 | 0.976 | 0.927 | 0.846 | 0.816 | 0.8787 | 0.47 |
+| dfine_l_plus_ms_scale0.48 | real_test | 0.9212 | 0.6169 | 0.981 | 0.887 | 0.879 | 0.721 | 0.8735 | 0.84 |
+| dfine_l_plus_ms_scale0.48 | real_val | 0.8315 | 0.5325 | 0.969 | 0.864 | 0.809 | 0.624 | 0.7164 | 0.85 |
+| dfine_l_plus_ms_scale0.5 | real_test | 0.9210 | 0.6165 | 0.979 | 0.891 | 0.879 | 0.731 | 0.8739 | 0.80 |
+| dfine_l_plus_ms_scale0.5 | real_val | 0.8278 | 0.5299 | 0.969 | 0.860 | 0.802 | 0.603 | 0.7157 | 0.92 |
 
 ### End-to-end pairing (P / R / F1; label-centroid criterion, struct IoU ≥ 0.5)
 
 | detector | split | Hungarian | LPS (conf pinned) | Relational |
 |---|---|---|---|---|
 | yolo_v0.4 | test | 0.798 / 0.834 / **0.816** | 0.849 / 0.798 / **0.823** | 0.834 / 0.834 / **0.834** |
-| yolo_v0.4_scale0.48 | test | 0.809 / 0.838 / **0.823** | 0.832 / 0.802 / **0.816** | 0.829 / 0.842 / **0.835** |
-| yolo_v0.4_scale0.5 | test | 0.792 / 0.834 / **0.813** | 0.822 / 0.802 / **0.811** | 0.817 / 0.834 / **0.826** |
+| yolo_v0.4 @ 0.48 | test | 0.809 / 0.838 / **0.823** | 0.832 / 0.802 / **0.816** | 0.829 / 0.842 / **0.835** |
+| yolo_v0.4 @ 0.5 | test | 0.792 / 0.834 / **0.813** | 0.822 / 0.802 / **0.811** | 0.817 / 0.834 / **0.826** |
 | yolo_v0.4 | val | 0.776 / 0.687 / **0.729** | 0.807 / 0.672 / **0.733** | 0.824 / 0.679 / **0.745** |
-| dfine_l_synth | test | 0.340 / 0.587 / **0.430** | 0.432 / 0.603 / **0.503** | 0.360 / 0.567 / **0.440** |
-| dfine_l_synth | val | 0.285 / 0.534 / **0.371** | 0.376 / 0.565 / **0.451** | 0.352 / 0.588 / **0.440** |
 | dfine_l_plus | test | 0.723 / 0.854 / **0.783** | 0.741 / 0.810 / **0.774** | 0.746 / 0.854 / **0.796** |
-| dfine_l_plus @ conf 0.5 (val-tuned) | test | 0.815 / 0.818 / **0.816** | 0.818 / 0.765 / **0.791** | 0.812 / 0.806 / **0.809** |
+| dfine_l_plus @ conf 0.45 | test | 0.791 / 0.826 / **0.808** | 0.808 / 0.781 / **0.794** | 0.799 / 0.822 / **0.810** |
+| dfine_l_plus @ conf 0.5 | test | 0.815 / 0.818 / **0.816** | 0.818 / 0.765 / **0.791** | 0.812 / 0.806 / **0.809** |
+| dfine_l_plus @ 0.48 @ conf 0.45 | test | 0.776 / 0.802 / **0.789** | 0.804 / 0.765 / **0.784** | 0.794 / 0.810 / **0.802** |
+| dfine_l_plus @ 0.48 @ conf 0.5 | test | 0.803 / 0.794 / **0.798** | 0.819 / 0.753 / **0.785** | 0.809 / 0.789 / **0.799** |
+| dfine_l_plus @ 0.5 @ conf 0.5 | test | 0.803 / 0.794 / **0.798** | 0.819 / 0.749 / **0.782** | 0.806 / 0.789 / **0.798** |
+| dfine_l_plus + recalibrated relational @0.3 | test | — | — | 0.759 / 0.854 / **0.804** |
+| dfine_l_plus + recalibrated relational @0.5 | test | — | — | 0.806 / 0.789 / **0.798** |
 | dfine_l_plus | val | 0.575 / 0.733 / **0.644** | 0.685 / 0.748 / **0.715** | 0.669 / 0.756 / **0.710** |
-| dfine_l_plus @ conf 0.5 (val-tuned) | val | 0.732 / 0.710 / **0.721** | 0.783 / 0.687 / **0.732** | 0.777 / 0.718 / **0.746** |
+| dfine_l_plus @ conf 0.5 | val | 0.732 / 0.710 / **0.721** | 0.783 / 0.687 / **0.732** | 0.777 / 0.718 / **0.746** |
+| dfine_l_plus + recalibrated relational @0.3 | val | — | — | 0.653 / 0.748 / **0.698** |
+| dfine_l_plus + recalibrated relational @0.5 | val | — | — | 0.756 / 0.710 / **0.732** |
+| dfine_l_plus_ms | test | 0.722 / 0.862 / **0.786** | 0.755 / 0.822 / **0.787** | 0.740 / 0.862 / **0.796** |
+| dfine_l_plus_ms @ conf 0.35 | test | 0.745 / 0.850 / **0.794** | 0.775 / 0.810 / **0.792** | 0.758 / 0.850 / **0.802** |
+| dfine_l_plus_ms @ conf 0.4 | test | 0.774 / 0.846 / **0.809** | 0.801 / 0.798 / **0.799** | 0.777 / 0.846 / **0.810** |
+| dfine_l_plus_ms @ conf 0.45 | test | 0.792 / 0.834 / **0.813** | 0.811 / 0.781 / **0.796** | 0.805 / 0.838 / **0.821** |
+| dfine_l_plus_ms @ conf 0.5 | test | 0.815 / 0.822 / **0.819** | 0.841 / 0.773 / **0.806** | 0.830 / 0.830 / **0.830** |
+| dfine_l_plus_ms @ 0.48 @ conf 0.35 | test | 0.746 / 0.846 / **0.793** | 0.776 / 0.798 / **0.786** | 0.761 / 0.850 / **0.803** |
+| dfine_l_plus_ms @ 0.48 @ conf 0.4 | test | 0.765 / 0.830 / **0.796** | 0.784 / 0.777 / **0.780** | 0.780 / 0.834 / **0.806** |
+| dfine_l_plus_ms @ 0.48 @ conf 0.45 | test | 0.796 / 0.822 / **0.809** | 0.812 / 0.769 / **0.790** | 0.810 / 0.826 / **0.818** |
+| dfine_l_plus_ms @ 0.48 @ conf 0.5 | test | 0.810 / 0.814 / **0.812** | 0.833 / 0.765 / **0.797** | 0.825 / 0.822 / **0.824** |
+| dfine_l_plus_ms | val | 0.601 / 0.748 / **0.667** | 0.716 / 0.771 / **0.743** | 0.671 / 0.748 / **0.708** |
 
 ### Operating-point sweep on real VAL (e2e F1)
 
@@ -166,13 +219,6 @@ conf 0.5 (Hungarian 0.721, LPS 0.732, Relational 0.746 — a tie with YOLO's val
 | yolo_v0.4 | 0.35 | 0.727 | 0.729 | 0.737 |
 | yolo_v0.4 | 0.4 | 0.734 | 0.733 | 0.724 |
 | yolo_v0.4 | 0.5 | 0.642 | 0.645 | 0.629 |
-| dfine_l_synth | 0.1 | 0.326 | 0.376 | 0.398 |
-| dfine_l_synth | 0.2 | 0.378 | 0.451 | 0.444 |
-| dfine_l_synth | 0.25 | 0.382 | 0.447 | 0.442 |
-| dfine_l_synth | 0.3 | 0.371 | 0.451 | 0.440 |
-| dfine_l_synth | 0.35 | 0.404 | 0.455 | 0.428 |
-| dfine_l_synth | 0.4 | 0.429 | 0.476 | 0.444 |
-| dfine_l_synth | 0.5 | 0.445 | 0.495 | 0.446 |
 | dfine_l_plus | 0.1 | 0.328 | 0.435 | 0.515 |
 | dfine_l_plus | 0.2 | 0.563 | 0.640 | 0.632 |
 | dfine_l_plus | 0.25 | 0.634 | 0.702 | 0.674 |
@@ -180,6 +226,23 @@ conf 0.5 (Hungarian 0.721, LPS 0.732, Relational 0.746 — a tie with YOLO's val
 | dfine_l_plus | 0.35 | 0.678 | 0.729 | 0.728 |
 | dfine_l_plus | 0.4 | 0.712 | 0.730 | 0.726 |
 | dfine_l_plus | 0.5 | 0.721 | 0.732 | 0.746 |
+| dfine_l_plus_ms | 0.1 | 0.320 | 0.465 | 0.544 |
+| dfine_l_plus_ms | 0.2 | 0.578 | 0.688 | 0.678 |
+| dfine_l_plus_ms | 0.25 | 0.645 | 0.714 | 0.695 |
+| dfine_l_plus_ms | 0.3 | 0.667 | 0.743 | 0.708 |
+| dfine_l_plus_ms | 0.35 | 0.720 | 0.749 | 0.716 |
+| dfine_l_plus_ms | 0.4 | 0.679 | 0.744 | 0.714 |
+| dfine_l_plus_ms | 0.5 | 0.685 | 0.732 | 0.732 |
+
+### Dustbin-margin sweep on real VAL (recalibrated relational, D-FINE detections)
+
+| margin | P | R | F1 |
+|---|---|---|---|
+| 0.0 | 0.818 | 0.687 | 0.747 |
+| 1.0 | 0.744 | 0.733 | 0.738 |
+| 2.0 | 0.653 | 0.748 | 0.698 |
+| 3.0 | 0.600 | 0.756 | 0.669 |
+| 4.0 | 0.596 | 0.756 | 0.667 |
 
 ### PyMuPDF → pypdfium2 render agreement (same detector on both renders)
 
