@@ -210,6 +210,7 @@ def train(args: argparse.Namespace) -> Path:
         augment=not args.no_augment,
         scale_jitter=args.scale_jitter,
         brightness=args.brightness,
+        downscale_aug=args.downscale_aug,
         limit=args.max_train_images,
     )
     val_ds = YoloDetectionDataset(
@@ -477,6 +478,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-augment", action="store_true")
     p.add_argument("--scale-jitter", type=float, default=0.3)
     p.add_argument("--brightness", type=float, default=0.1)
+    p.add_argument(
+        "--downscale-aug",
+        type=float,
+        default=0.0,
+        help="probability of a random 0.4-1.0x pre-downscale (random interpolation) before the "
+        "letterbox — robustness to lower-DPI renders / other rasterisers",
+    )
     p.add_argument(
         "--max-train-images", type=int, default=None, help="debug: cap training set"
     )

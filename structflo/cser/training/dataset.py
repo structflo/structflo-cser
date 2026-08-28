@@ -17,6 +17,7 @@ import math
 import random
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 from PIL import Image
@@ -48,6 +49,7 @@ class YoloDetectionDataset(Dataset):
         augment: bool = False,
         scale_jitter: float = 0.3,
         brightness: float = 0.1,
+        downscale_aug: float = 0.0,
         grayscale: bool = True,
         pad_value: int = PAD_VALUE,
         min_box_px: float = 2.0,
@@ -69,6 +71,11 @@ class YoloDetectionDataset(Dataset):
         self.augment = augment
         self.scale_jitter = scale_jitter
         self.brightness = brightness
+        # Probability of pre-downscaling the decoded page by a random factor in [0.4, 1] with a
+        # random interpolation before the letterbox. Mimics lower-DPI renders / different
+        # rasterisation chains (deployment renders at 144-150 dpi, annotation pages are 300 dpi)
+        # so the detector is not tied to one resampling pipeline.
+        self.downscale_aug = downscale_aug
         self.grayscale = grayscale
         self.pad_value = pad_value
         self.min_box_px = min_box_px
@@ -102,6 +109,20 @@ class YoloDetectionDataset(Dataset):
         if self.augment and self.scale_jitter > 0:
             jitter = random.uniform(1.0 - self.scale_jitter, 1.0 + self.scale_jitter)
         arr, orig_w, orig_h = self._load(path, S * jitter)
+        if (
+            self.augment
+            and self.downscale_aug > 0
+            and random.random() < self.downscale_aug
+        ):
+            f = random.uniform(0.4, 1.0)
+            interp = random.choice(
+                [cv2.INTER_AREA, cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_LANCZOS4]
+            )
+            arr = cv2.resize(
+                arr,
+                (max(1, round(arr.shape[1] * f)), max(1, round(arr.shape[0] * f))),
+                interpolation=interp,
+            )
         h, w = arr.shape[:2]
         boxes, classes = load_yolo_labels(self.labels_dir / f"{path.stem}.txt", w, h)
 
