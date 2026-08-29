@@ -138,8 +138,8 @@ ChemPipeline.to_records(pairs)
 - **Input**: grayscale→RGB, letterboxed so the long side is 1280 px (pad 114), pixels/255, no
   mean/std normalisation. Training and inference share `inference/preprocess.py`.
 - **Inference**: full-image at imgsz=1280 is the default (`sf-extract`/`sf-detect` too — `--tile`
-  is opt-in). Scores are per-query sigmoid outputs; no NMS. **Operating point conf = 0.4**
-  (tuned on real_val for D-FINE's score distribution; the retired YOLO used 0.3). Tiling
+  is opt-in). Scores are per-query sigmoid outputs; no NMS. **Operating point conf = 0.5**
+  (real_val is flat 0.4–0.55 for D-FINE; 0.5 is consistently better on 144-dpi renders; the retired YOLO used 0.3). Tiling
   (1536px tiles, per-class NMS) remains available for very dense pages but cuts labels at tile boundaries.
 - **Weights format**: one `.safetensors` file with the HF config JSON in its metadata
   (`format = structflo-cser-dfine-v1`); loaded via `DFineDetector.from_file`. Legacy YOLO `.pt`
@@ -147,7 +147,10 @@ ChemPipeline.to_records(pairs)
 - **Training config** (`sf-train`): AdamW (lr 1e-4 head / 1e-5 backbone for the synthetic stage,
   5e-5 / 5e-6 for the real fine-tune), 1-epoch linear warmup + cosine to 1%, wd 1e-4, grad-clip 0.1,
   bf16 autocast, EMA 0.9999, checkpoint selection on val fitness (0.1·mAP50 + 0.9·mAP50-95),
-  augmentation = scale jitter ±30% + random placement + brightness ±10% (no flips, no hue/sat).
+  augmentation = scale jitter ±30% + random placement + brightness ±10% (no flips, no hue/sat);
+  optional `--downscale-aug` (rasteriser/DPI robustness) and `--photometric-aug` (polarity/luminance:
+  inversion, regional inversion, tinted cards, ink attenuation, gradients, overlays — `training/photometric.py`;
+  the real corpus has no dark pages, so this is what makes dark decks work).
 - **Evaluation**: `structflo.cser.inference.metrics` / `evaluate.py` (backend-neutral; verified to
   match pycocotools exactly). Legacy ultralytics `.val()` numbers are NOT comparable with these.
 - **Runs directory**: `runs/labels_detect/`
@@ -197,7 +200,9 @@ Scripts live in `scripts/finetune/{yolo,lps}/`, each with `prepare_data.py`, `tr
   `sf-train --data data/finetune/plus/yolo/data.yaml --init <base> --lr 5e-5 --backbone-lr 5e-6`
   → `runs/labels_detect/dfine_l_plus/weights/best.safetensors`; then a short rasteriser-robustness
   fine-tune `--init <plus> --lr 2e-5 --backbone-lr 2e-6 --downscale-aug 0.5 --epochs 10`
-  → `runs/labels_detect/dfine_l_plus_ms/weights/best.safetensors` = **cser-detector v1.0**
+  → `runs/labels_detect/dfine_l_plus_ms/weights/best.safetensors`; then a photometric-robustness
+  fine-tune `--init <ms> --lr 2e-5 --backbone-lr 2e-6 --downscale-aug 0.5 --photometric-aug 0.3 --photometric-mix v1 --val-variants invert --epochs 12`
+  → `runs/labels_detect/dfine_l_plus_photo/weights/best.safetensors` = **cser-detector v1.0**
   (val = real_val, report on real_test; see docs/LICENSE_MIGRATION.md for the numbers)
 - Compare against the frozen YOLO v0.4 baseline with `scripts/license_migration/{dump_preds,eval_preds,e2e_from_preds}.py`
 

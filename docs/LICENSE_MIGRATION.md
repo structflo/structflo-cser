@@ -270,6 +270,72 @@ Synthetic test (1 000 pages): mAP50 0.995 / mAP50-95 0.976 (YOLO 0.995 / 0.931).
 | 150 | 300 | 0.9631 | 221 | 0.013 |
 
 
+## Dark / coloured backgrounds: photometric augmentation (stage 4)
+
+The annotated real corpus has **no dark-background pages** (99 % of train/val/test have background
+luminance ≥ 200; exactly one dark-theme slide exists, in the train split), and the synthetic generator
+only inverts ~15 % of *structures* onto dark patches. Measured on inverted copies of real_test, the
+stage-3 detector collapsed: e2e Hungarian F1 0.809 → 0.529. Since the detector sees grayscale, colour
+filters would be no-ops; what matters is **luminance polarity and contrast**, so
+`structflo/cser/training/photometric.py` implements (boxes never change):
+
+1. full inversion (dark base 0–110, light ink), 2. regional inversion — rectangles, title/footer
+bands, sidebars, box-aligned rows, and structure-anchored "cards" that union or avoid the paired
+label, with seams that never cut through a GT box, 3. background/ink luminance and contrast (grey
+backgrounds, lightened ink, gamma, contrast, offset), 4. linear/radial gradients; plus per-box ink
+attenuation, non-inverting tinted cards / zebra rows, translucent overlays and rotated watermarks,
+and low-frequency texture in dark regions. Sampled scenarios compose them (`SCENARIOS`; the
+shipped checkpoint used the simpler `SCENARIOS_V1`, `--photometric-mix v1`). Robustness is measured
+on deterministic variants of real_test (`scripts/license_migration/proxy_dark_eval.py`): an
+in-distribution block (polarity / regional / luminance groups) and a **held-out block that differs
+in kind from training** (inversion + JPEG re-encode, low-contrast inversion, dimmed labels on dark,
+light inset panel, inversion + noise, non-GT-aligned grid inversion). A control run with identical
+epochs and no photometric augmentation isolates the augmentation's effect.
+
+Runs (all 12 epochs from `dfine_l_plus_ms`, lr 2e-5, `--downscale-aug 0.5`, selection on real_val
+blended with its inverted copy): **v1-mix** (`dfine_l_plus_photo`, p=0.3, `SCENARIOS_V1`),
+v2-mix (`dfine_l_plus_photo2`, p=0.35, full scenario set), control (`dfine_l_plus_ctrl`, p=0).
+
+**Plain real_test (100 pages) — regression guard**
+
+| checkpoint | mAP50 / mAP50-95 | label P / R @0.4 | e2e Hung / LPS / Rel @0.4 | @0.5 | 0.48× Hung @0.4 / @0.5 | paired ΔF1 vs stage 3 (Hung @0.4) |
+|---|---|---|---|---|---|---|
+| stage 3 (`dfine_l_plus_ms`) | 0.924 / 0.617 | 0.771 / 0.874 | 0.809 / 0.799 / 0.810 | 0.819 / 0.806 / 0.830 | 0.796 / 0.812 | — |
+| **v1-mix (shipped as v1.0)** | 0.921 / 0.612 | 0.774 / 0.874 | 0.815 / 0.799 / 0.831 | 0.821 / 0.804 / 0.830 | 0.799 / 0.820 | +0.006 [−0.012, +0.023] |
+| v2-mix | 0.912 / 0.614 | 0.792 / 0.850 | 0.816 / 0.800 / 0.819 | 0.819 / 0.812 / 0.827 | 0.802 / 0.794 | +0.007 [−0.014, +0.027] |
+| control (no photometric) | 0.924 / 0.611 | 0.760 / 0.870 | 0.810 / 0.790 / 0.812 | 0.821 / 0.798 / 0.818 | 0.812 / 0.824 | +0.001 [−0.022, +0.026] |
+
+**Dark-page proxies (real_test variants, conf 0.4) — e2e Hungarian F1 by group**
+
+| checkpoint | input | polarity (4) | regional (3) | luminance (6) | held-out (6) | worst variant |
+|---|---|---|---|---|---|---|
+| stage 3 | full | 0.542 | 0.726 | 0.807 | 0.584 | 0.507 |
+| stage 3 | 0.48× | 0.525 | 0.703 | 0.800 | 0.572 | 0.497 |
+| **v1-mix (v1.0)** | full | **0.805** | **0.796** | 0.808 | **0.801** | **0.768** |
+| **v1-mix (v1.0)** | 0.48× | 0.796 | 0.788 | 0.805 | 0.783 | 0.766 |
+| v2-mix | full | 0.812 | 0.804 | 0.816 | 0.786 | 0.765 |
+| v2-mix | 0.48× | 0.771 | 0.778 | 0.809 | 0.768 | 0.736 |
+| control (no photometric) | full | 0.566 | 0.716 | 0.814 | 0.612 | 0.535 |
+| control (no photometric) | 0.48× | 0.569 | 0.718 | 0.808 | 0.594 | 0.520 |
+
+Reading: on plain pages nothing moves (all deltas inside the paired CI); on dark / regional /
+held-out variants the augmented detector performs at the same level as on plain pages
+(0.80 vs 0.81), whereas the control — same extra epochs, no augmentation — stays broken (0.57 /
+0.61). The gain is therefore attributable to the augmentation. The v2 mix is within noise of v1 on
+plain pages and full-res proxies, and slightly weaker at 0.48× and on the held-out block (single
+seed), so v1-mix ships; v2 remains the default augmentation code path.
+
+Caveats: (i) every dark-page number is **proxy-only** — there is no real dark test set; annotating
+25–30 real dark-theme decks (≥ 60 pairs) would give a ±0.1-F1 real measurement and is the
+recommended next step; (ii) DECIMER / EasyOCR / LPS consume pixels downstream and were not trained
+for light-on-dark crops — polarity-normalising crops (invert when the crop background is dark)
+before enrichment is the natural follow-up; (iii) the relational matcher is geometry-only and
+unaffected.
+
+**Operating point moved to conf 0.5.** real_val cannot separate 0.4 from 0.5 (flat 0.4–0.55), and on
+144-dpi-equivalent input every one of the four checkpoints scores higher at 0.5 (e.g. v1.0: 0.820 vs
+0.799). Pipeline, CLI and scripts default to 0.5.
+
 ## A training pitfall worth knowing (transformers D-FINE)
 
 With contrastive-denoising query groups enabled (`num_denoising=100`, the HF default), the

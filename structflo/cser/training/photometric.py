@@ -54,6 +54,22 @@ SCENARIOS: list[tuple[float, tuple[str, ...]]] = [
     (0.05, ("overlay",)),
 ]
 P_INK_ATTENUATE_AFTER_INVERT = 0.3
+
+# The simpler first mix (commit 21540ef): the shipped cser-detector v1.0 checkpoint
+# (dfine_l_plus_photo) was trained with it at --photometric-aug 0.3. Kept for reproducibility;
+# select with photometric_augment(..., mix="v1") / sf-train --photometric-mix v1.
+SCENARIOS_V1: list[tuple[float, tuple[str, ...]]] = [
+    (0.22, ("invert",)),
+    (0.10, ("invert", "gradient")),
+    (0.08, ("invert", "lum")),
+    (0.15, ("regional",)),
+    (0.10, ("regional", "lum")),
+    (0.15, ("lum",)),
+    (0.05, ("lum", "lum")),
+    (0.10, ("gradient",)),
+    (0.05, ("gradient", "lum")),
+]
+MIXES = {"v2": SCENARIOS, "v1": SCENARIOS_V1}
 P_TEXTURE_IN_DARK = 0.3
 
 
@@ -526,12 +542,14 @@ def photometric_augment(
     rng: random.Random,
     boxes: Array | None = None,
     classes: Array | None = None,
+    mix: str = "v2",
 ) -> tuple[Array, tuple[str, ...]]:
-    """Apply one sampled scenario. Returns ``(image, ops_applied)``; boxes are untouched."""
+    """Apply one sampled scenario from ``MIXES[mix]``. Returns ``(image, ops)``; boxes untouched."""
+    scenarios = MIXES[mix]
     ops = list(
-        rng.choices([o for _, o in SCENARIOS], weights=[p for p, _ in SCENARIOS])[0]
+        rng.choices([o for _, o in scenarios], weights=[p for p, _ in scenarios])[0]
     )
-    if "invert" in ops and rng.random() < P_INK_ATTENUATE_AFTER_INVERT:
+    if mix == "v2" and "invert" in ops and rng.random() < P_INK_ATTENUATE_AFTER_INVERT:
         ops.append("ink_attenuate")
     for op in ops:
         x = OPS[op](x, rng, boxes, classes)

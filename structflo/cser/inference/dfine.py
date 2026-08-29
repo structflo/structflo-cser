@@ -186,7 +186,7 @@ class DFineDetector:
         self,
         img: np.ndarray,
         *,
-        conf: float = 0.4,
+        conf: float = 0.5,
         imgsz: int | None = None,
         max_det: int = 300,
     ) -> list[dict]:

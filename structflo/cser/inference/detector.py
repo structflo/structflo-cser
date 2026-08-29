@@ -39,7 +39,7 @@ def load_detector(
 
 
 def detect_full(
-    model: DFineDetector, img: np.ndarray, conf: float = 0.4, imgsz: int = 1280
+    model: DFineDetector, img: np.ndarray, conf: float = 0.5, imgsz: int = 1280
 ) -> list[dict]:
     """Run the detector on a single full image (no tiling).
 
@@ -55,7 +55,7 @@ def detect_tiled(
     img: np.ndarray,
     tile_size: int = 1536,
     overlap: float = 0.20,
-    conf: float = 0.4,
+    conf: float = 0.5,
     nms_iou: float = 0.5,
 ) -> list[dict]:
     """Run the detector across overlapping tiles and merge with per-class NMS.
@@ -226,7 +226,7 @@ def main() -> None:
         "--out", default="detections", help="Output directory for visualisations"
     )
     p.add_argument(
-        "--conf", type=float, default=0.4, help="Detection confidence threshold"
+        "--conf", type=float, default=0.5, help="Detection confidence threshold"
     )
     p.add_argument(
         "--imgsz",

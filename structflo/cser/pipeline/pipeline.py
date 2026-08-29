@@ -102,7 +102,7 @@ class ChemPipeline:
         tile: bool = False,
         tile_size: int = 1536,
         imgsz: int = 1280,
-        conf: float = 0.4,
+        conf: float = 0.5,
         grayscale: bool = True,
     ) -> None:
         """
@@ -126,8 +126,9 @@ class ChemPipeline:
                               detection.  Defaults to 1280, the training
                               resolution; full-image detection at 1280 strictly
                               outperforms tiling on large landscape pages.
-            conf:             Detection confidence threshold (0.4 = the D-FINE
-                              detector's operating point, tuned on real_val;
+            conf:             Detection confidence threshold (0.5 = the D-FINE
+                              detector's operating point: real_val is flat 0.4–0.55 and 0.5
+                              is consistently better on 144-dpi renders;
                               the retired YOLO detector used 0.3).
             grayscale:        Convert input images to grayscale before detection.
                               Defaults to True to match training data distribution.

@@ -11,7 +11,7 @@ python scripts/publish_weights.py --model cser-detector --version v1.0
 
 # Point to a specific weights file (default: standard trainer output location)
 python scripts/publish_weights.py --model cser-detector --version v1.0 \\
-    --weights-file runs/labels_detect/dfine_l_plus_ms/weights/best.safetensors
+    --weights-file runs/labels_detect/dfine_l_plus_photo/weights/best.safetensors
 
 # Every publish also (re)uploads a model card (README.md with `license: apache-2.0`
 # front-matter + provenance). Pass --no-card to skip it.
@@ -53,7 +53,7 @@ MODEL_REPOS: dict[str, dict] = {
 
 # Default weights file paths per model (relative to project root)
 DEFAULT_WEIGHTS_PATHS: dict[str, str] = {
-    "cser-detector": "runs/labels_detect/dfine_l_plus_ms/weights/best.safetensors",
+    "cser-detector": "runs/labels_detect/dfine_l_plus_photo/weights/best.safetensors",
     "cser-lps": "runs/lps/best.pt",
     "cser-relmatcher": "runs/relmatch_det/best.pt",
 }

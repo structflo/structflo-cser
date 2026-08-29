@@ -212,6 +212,7 @@ def train(args: argparse.Namespace) -> Path:
         brightness=args.brightness,
         downscale_aug=args.downscale_aug,
         photometric_aug=args.photometric_aug,
+        photometric_mix=args.photometric_mix,
         limit=args.max_train_images,
     )
     val_ds = YoloDetectionDataset(
@@ -508,7 +509,7 @@ def build_parser() -> argparse.ArgumentParser:
         "in transformers' D-FINE implementation — see trainer.py)",
     )
     p.add_argument(
-        "--conf", type=float, default=0.4, help="operating point for reported P/R"
+        "--conf", type=float, default=0.5, help="operating point for reported P/R"
     )
     p.add_argument(
         "--patience",
@@ -548,6 +549,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.5,
         help="selection fitness = (1-w)*plain val + w*mean(variants); plain fitness is logged too",
+    )
+    p.add_argument(
+        "--photometric-mix",
+        choices=["v1", "v2"],
+        default="v2",
+        help="scenario mix (v1 = the simpler mix the shipped v1.0 checkpoint was trained with)",
     )
     p.add_argument(
         "--val-variants",

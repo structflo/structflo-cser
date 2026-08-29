@@ -100,7 +100,7 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "repo_id": "sidxz/structflo-cser-detector",
             "filename": "best.safetensors",
             "revision": "weights-v1.0",
-            "sha256": "4f1719f6d6c4f5b275c76bae01d71ea9a7b8ae9f9e147845297e1ef0cd52f48b",
+            "sha256": "29962b7115159d93b6b6d3f16b96769a6ffc34e3590e6697687a8e3425ad0bc7",
             "requires": ">=1.0.0,<2.0.0",
         },
     },

@@ -142,7 +142,7 @@ def main():
         default=None,
         help="detector weights (.safetensors; default: latest published)",
     )
-    ap.add_argument("--conf", type=float, default=0.4)
+    ap.add_argument("--conf", type=float, default=0.5)
     ap.add_argument(
         "--label-conf",
         type=float,

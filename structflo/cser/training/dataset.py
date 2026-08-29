@@ -52,6 +52,7 @@ class YoloDetectionDataset(Dataset):
         brightness: float = 0.1,
         downscale_aug: float = 0.0,
         photometric_aug: float = 0.0,
+        photometric_mix: str = "v2",
         transform=None,
         grayscale: bool = True,
         pad_value: int = PAD_VALUE,
@@ -82,6 +83,7 @@ class YoloDetectionDataset(Dataset):
         # Probability of a sampled luminance/polarity scenario (inversion, regional inversion,
         # background/ink contrast, gradients) — see training/photometric.py. Boxes are unchanged.
         self.photometric_aug = photometric_aug
+        self.photometric_mix = photometric_mix
         # Optional deterministic page transform ``f(arr, boxes_xyxy_px) -> arr`` applied to every
         # sample (used to build fixed validation variants, e.g. an inverted copy of real_val).
         self.transform = transform
@@ -142,7 +144,11 @@ class YoloDetectionDataset(Dataset):
             and random.random() < self.photometric_aug
         ):
             arr, _ = photometric_augment(
-                arr, random.Random(random.getrandbits(64)), boxes
+                arr,
+                random.Random(random.getrandbits(64)),
+                boxes,
+                classes,
+                mix=self.photometric_mix,
             )
 
         if self.augment and self.brightness > 0:
