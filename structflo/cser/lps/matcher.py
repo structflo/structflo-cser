@@ -54,6 +54,14 @@ class LearnedMatcher(BaseMatcher):
         max_dist_px: Optional pre-filter: candidate pairs whose centroid
                      distance exceeds this value are excluded before
                      scoring, saving compute on dense pages.
+        use_detector_conf:
+                     Feed live detector confidences into geometric features
+                     12/13.  The published scorers were trained on ground-truth
+                     boxes with those features fixed at 1.0, so the default
+                     (``False``) pins them to 1.0 at inference too — this
+                     removes a train/serve mismatch (measured +0.045 end-to-end
+                     F1 on real_test with the same detections) and makes the
+                     matcher independent of the detector's score calibration.
     """
 
     def __init__(
@@ -62,9 +70,11 @@ class LearnedMatcher(BaseMatcher):
         min_score: float = 0.5,
         device: str = "cuda",
         max_dist_px: float | None = None,
+        use_detector_conf: bool = False,
     ) -> None:
         self.min_score = min_score
         self.max_dist_px = max_dist_px
+        self.use_detector_conf = use_detector_conf
         self._device = torch.device(device if torch.cuda.is_available() else "cpu")
         self._weights = weights  # version tag, local path, or None (→ latest)
         self._weights_path: str | None = None
@@ -123,8 +133,8 @@ class LearnedMatcher(BaseMatcher):
                         lbl.bbox.as_list(),
                         page_w,
                         page_h,
-                        s.conf,
-                        lbl.conf,
+                        s.conf if self.use_detector_conf else 1.0,
+                        lbl.conf if self.use_detector_conf else 1.0,
                     )
                 )
                 struct_crops.append(

@@ -9,9 +9,12 @@ python scripts/publish_weights.py --model cser-detector --version v1.0 --dry-run
 # Full publish + auto-patch weights.py
 python scripts/publish_weights.py --model cser-detector --version v1.0
 
-# Point to a specific .pt file (default: standard YOLO output location)
+# Point to a specific weights file (default: standard trainer output location)
 python scripts/publish_weights.py --model cser-detector --version v1.0 \\
-    --weights-file runs/labels_detect/yolo11l_panels/weights/best.pt
+    --weights-file runs/labels_detect/dfine_l_plus_photo/weights/best.safetensors
+
+# Every publish also (re)uploads a model card (README.md with `license: apache-2.0`
+# front-matter + provenance). Pass --no-card to skip it.
 
 # Publish LPS (Learned Pair Scorer) weights
 python scripts/publish_weights.py --model cser-lps --version v1.0
@@ -35,23 +38,23 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 MODEL_REPOS: dict[str, dict] = {
     "cser-detector": {
-        "repo_id":  "sidxz/structflo-cser-detector",
-        "filename": "best.pt",
+        "repo_id": "sidxz/structflo-cser-detector",
+        "filename": "best.safetensors",  # D-FINE (transformers) single-file checkpoint; v0.x were YOLO best.pt
     },
     "cser-lps": {
-        "repo_id":  "sidxz/structflo-cser-lps",
+        "repo_id": "sidxz/structflo-cser-lps",
         "filename": "best.pt",
     },
     "cser-relmatcher": {
-        "repo_id":  "sidxz/structflo-cser-relmatcher",
+        "repo_id": "sidxz/structflo-cser-relmatcher",
         "filename": "best.pt",
     },
 }
 
 # Default weights file paths per model (relative to project root)
 DEFAULT_WEIGHTS_PATHS: dict[str, str] = {
-    "cser-detector": "runs/labels_detect/yolo11l_panels/weights/best.pt",
-    "cser-lps":      "runs/lps/best.pt",
+    "cser-detector": "runs/labels_detect/dfine_l_plus_photo/weights/best.safetensors",
+    "cser-lps": "runs/lps/best.pt",
     "cser-relmatcher": "runs/relmatch_det/best.pt",
 }
 
@@ -62,6 +65,7 @@ WEIGHTS_PY = PROJECT_ROOT / "structflo" / "cser" / "weights.py"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def sha256_of(path: Path) -> str:
     h = hashlib.sha256()
@@ -74,10 +78,12 @@ def sha256_of(path: Path) -> str:
 def current_pkg_version() -> str:
     try:
         import importlib.metadata
+
         return importlib.metadata.version("structflo-cser")
     except importlib.metadata.PackageNotFoundError:
         # running from source — read pyproject.toml
         import tomllib
+
         data = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
         return data["project"]["version"]
 
@@ -89,7 +95,9 @@ def default_requires(pkg_version: str) -> str:
     return f">={pkg_version},<{next_major}.0.0"
 
 
-def upload(repo_id: str, filename: str, weights_file: Path, version: str, dry_run: bool) -> str:
+def upload(
+    repo_id: str, filename: str, weights_file: Path, version: str, dry_run: bool
+) -> str:
     """Upload weights_file to HF Hub and tag the commit. Returns commit sha."""
     if dry_run:
         print(f"[dry-run] Would upload {weights_file} → {repo_id}/{filename}")
@@ -97,6 +105,7 @@ def upload(repo_id: str, filename: str, weights_file: Path, version: str, dry_ru
         return "dryrun000"
 
     from huggingface_hub import HfApi
+
     api = HfApi()
 
     # Ensure the repo exists (no-op if it already does). New models need this
@@ -128,8 +137,96 @@ def upload(repo_id: str, filename: str, weights_file: Path, version: str, dry_ru
 
 
 # ---------------------------------------------------------------------------
+# Model card
+# ---------------------------------------------------------------------------
+
+CARD_DESCRIPTIONS: dict[str, str] = {
+    "cser-detector": (
+        "2-class page detector (`chemical_structure`, `compound_label`) for chemistry "
+        "documents. Architecture: **D-FINE-L** (HGNet-V2 backbone, `transformers` "
+        "`DFineForObjectDetection`, Apache-2.0), initialised from "
+        "`ustc-community/dfine-large-coco` (Apache-2.0, COCO-only pretraining) and trained "
+        "clean-room on synthetic pages rendered with RDKit from ChEMBL SMILES, then fine-tuned "
+        "on an internal annotated corpus. Single-file `.safetensors` checkpoint with the model "
+        "config in its metadata; load with `structflo.cser.inference.dfine.DFineDetector.from_file`.\n\n"
+        "Versions v0.1–v0.4 of this repo were Ultralytics YOLO11l checkpoints and are retired "
+        "(AGPL-3.0 lineage); use v1.0 or later with `structflo-cser` >= 1.0."
+    ),
+    "cser-lps": (
+        "Learned Pair Scorer — a ~557K-parameter CNN that scores (structure, label) box pairs "
+        "from geometric features and visual crops (our own architecture, plain torch state_dict)."
+    ),
+    "cser-relmatcher": (
+        "Relational matcher — a geometry-only transformer over all page detections with Sinkhorn "
+        "optimal transport and learnable dustbins (our own architecture, plain torch state_dict). "
+        "Trained on the boxes/confidences of the matching `cser-detector` version."
+    ),
+}
+
+
+def model_card(
+    model: str, version: str, sha256: str, requires: str, weights_file: Path
+) -> str:
+    desc = CARD_DESCRIPTIONS.get(model, "")
+    return f"""---
+license: apache-2.0
+library_name: structflo-cser
+tags:
+  - object-detection
+  - chemistry
+  - document-analysis
+---
+
+# {model} — structflo-cser weights
+
+{desc}
+
+| field | value |
+|---|---|
+| latest version | `{version}` (HF tag `weights-{version}`) |
+| file | `{weights_file.name}` |
+| sha256 | `{sha256}` |
+| requires | `structflo-cser{requires}` |
+
+## Usage
+
+```python
+from structflo.cser.pipeline import ChemPipeline
+
+pipeline = ChemPipeline()            # resolves the latest registered weights
+pairs = pipeline.process("page.png")
+```
+
+Pin a version with `ChemPipeline(weights="{version}")`.
+
+## Licence and provenance
+
+Weights: Apache-2.0. Training data: synthetic pages rendered with RDKit from ChEMBL
+(CC-BY-SA-3.0) SMILES plus an internal annotated corpus (not released). See the package's
+`THIRD_PARTY_NOTICES.md` for upstream attributions.
+"""
+
+
+def upload_card(repo_id: str, card: str, version: str, dry_run: bool) -> None:
+    if dry_run:
+        print(f"[dry-run] Would upload model card README.md → {repo_id}")
+        return
+    from huggingface_hub import HfApi
+
+    HfApi().upload_file(
+        path_or_fileobj=card.encode(),
+        path_in_repo="README.md",
+        repo_id=repo_id,
+        repo_type="model",
+        commit_message=f"model card for weights {version}",
+    )
+    print("Model card uploaded.")
+
+
+# ---------------------------------------------------------------------------
 # weights.py patching
 # ---------------------------------------------------------------------------
+
 
 def _load_registry_source() -> str:
     return WEIGHTS_PY.read_text()
@@ -147,7 +244,7 @@ def _patch_registry(source: str, model: str, version: str, meta: dict) -> str:
         f'{indent}    "revision": "weights-{version}",',
         f'{indent}    "sha256":   "{meta["sha256"]}",',
         f'{indent}    "requires": "{meta["requires"]}",',
-        f'{indent}}},',
+        f"{indent}}},",
     ]
     new_entry = "\n".join(lines)
 
@@ -167,7 +264,7 @@ def _patch_registry(source: str, model: str, version: str, meta: dict) -> str:
         source,
     )
     if model_open is None:
-        raise ValueError(f"Could not find REGISTRY[\"{model}\"] in {WEIGHTS_PY}")
+        raise ValueError(f'Could not find REGISTRY["{model}"] in {WEIGHTS_PY}')
 
     # Find the matching closing `    },` after the model block opens
     block_start = model_open.end()
@@ -209,8 +306,8 @@ def patch_weights_py(model: str, version: str, meta: dict, dry_run: bool) -> Non
 
     if dry_run:
         print(f"\n[dry-run] Would patch {WEIGHTS_PY} with:")
-        print(f"  REGISTRY[\"{model}\"][\"{version}\"] = {{...}}")
-        print(f"  LATEST[\"{model}\"] = \"{version}\"")
+        print(f'  REGISTRY["{model}"]["{version}"] = {{...}}')
+        print(f'  LATEST["{model}"] = "{version}"')
         return
 
     WEIGHTS_PY.write_text(patched)
@@ -220,6 +317,7 @@ def patch_weights_py(model: str, version: str, meta: dict, dry_run: bool) -> Non
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     p = argparse.ArgumentParser(
@@ -241,7 +339,7 @@ def main() -> None:
     p.add_argument(
         "--weights-file",
         default=None,
-        help="Path to .pt file.  Defaults to the standard YOLO output location.",
+        help="Path to the weights file.  Defaults to the standard trainer output location.",
     )
     p.add_argument(
         "--filename",
@@ -264,7 +362,12 @@ def main() -> None:
         "--requires",
         default=None,
         help="PEP 440 specifier for compatible pkg versions, e.g. '>=0.1.0,<1.0.0'. "
-             "Defaults to current installed major: >=X.Y.Z,<(X+1).0.0",
+        "Defaults to current installed major: >=X.Y.Z,<(X+1).0.0",
+    )
+    p.add_argument(
+        "--no-card",
+        action="store_true",
+        help="Do not (re)upload the model card README.md to the HF repo.",
     )
     p.add_argument(
         "--dry-run",
@@ -274,8 +377,10 @@ def main() -> None:
     args = p.parse_args()
 
     # --- Resolve weights file -----------------------------------------------
-    weights_file = Path(args.weights_file) if args.weights_file else (
-        PROJECT_ROOT / DEFAULT_WEIGHTS_PATHS[args.model]
+    weights_file = (
+        Path(args.weights_file)
+        if args.weights_file
+        else (PROJECT_ROOT / DEFAULT_WEIGHTS_PATHS[args.model])
     )
     if not weights_file.exists():
         p.error(
@@ -295,7 +400,9 @@ def main() -> None:
 
     print(f"Model:         {args.model}")
     print(f"Version:       {args.version}  (HF tag: {hf_tag})")
-    print(f"Weights file:  {weights_file}  ({weights_file.stat().st_size / 1e6:.1f} MB)")
+    print(
+        f"Weights file:  {weights_file}  ({weights_file.stat().st_size / 1e6:.1f} MB)"
+    )
     print(f"HF repo:       {repo_info['repo_id']}")
     print(f"HF filename:   {repo_filename}")
     print(f"sha256:        {sha256}")
@@ -318,14 +425,23 @@ def main() -> None:
         dry_run=args.dry_run,
     )
 
+    # --- Model card ---------------------------------------------------------
+    if not args.no_card:
+        upload_card(
+            repo_info["repo_id"],
+            model_card(args.model, args.version, sha256, requires, weights_file),
+            args.version,
+            args.dry_run,
+        )
+
     # --- Patch weights.py ---------------------------------------------------
     if args.no_registry:
         print("Skipping weights.py patch (--no-registry).")
     else:
         meta = {
-            "repo_id":  repo_info["repo_id"],
+            "repo_id": repo_info["repo_id"],
             "filename": repo_filename,
-            "sha256":   sha256,
+            "sha256": sha256,
             "requires": requires,
         }
         patch_weights_py(args.model, args.version, meta, dry_run=args.dry_run)

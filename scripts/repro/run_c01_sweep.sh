@@ -12,7 +12,7 @@ PREP=scripts/finetune/relmatch/prepare_det_data.py
 ts(){ date -u +%Y-%m-%dT%H:%M:%SZ; }; banner(){ echo; echo "[$(ts)] === $* ==="; }
 is_done(){ [ -f "$1" ] && grep -q "PART B" "$1" 2>/dev/null; }
 for S in $SEEDS; do
-  DET=$REPRO/detector/finetuned_s$S/best.pt
+  DET=$REPRO/detector/finetuned_s$S/best.safetensors
   CACHE=data/finetune/relmatch_det_c01_s$S
   OUT=$REPRO/relmatch_det_c01_s$S
   if [ ! -f "$CACHE/.done" ]; then

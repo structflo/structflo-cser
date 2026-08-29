@@ -5,6 +5,9 @@ detections that are true-positive (match a GT label at IoU>=0.5) vs false-positi
 derive label precision/recall. Aggregated mean +/- std over the given detector seeds.
 Counts/metrics only — no page content is exposed.
 
+Detector backend: D-FINE via ``structflo.cser.inference.detector`` (full-image
+inference at ``--imgsz``; per-seed weights are ``.safetensors`` files).
+
 Usage:
     uv run python scripts/repro/label_conf_sweep.py --seeds 42 43 44
 """
@@ -35,9 +38,9 @@ def _iou(a, b):
 
 
 def sweep_detector(weights: Path, stems: list[str], imgsz: int) -> dict:
-    from ultralytics import YOLO
+    from structflo.cser.inference.detector import detect_full, load_detector
 
-    model = YOLO(str(weights))
+    model = load_detector(weights, imgsz=imgsz)
     acc = {c: {"tp": 0, "fp": 0} for c in CONFS}
     gt_total = 0
     pages = 0
@@ -52,11 +55,11 @@ def sweep_detector(weights: Path, stems: list[str], imgsz: int) -> dict:
         gt_labels = [e["label_bbox"] for e in entries if e.get("label_bbox")]
         gt_total += len(gt_labels)
         img = np.array(Image.open(ip).convert("L").convert("RGB"))
-        res = model(img, conf=FLOOR, imgsz=imgsz, verbose=False)[0]
+        # class_id 1 == compound_label
         dets = [
-            (float(b.conf[0]), [float(v) for v in b.xyxy[0].cpu().numpy()])
-            for b in res.boxes
-            if int(b.cls[0]) == 1
+            (float(d["conf"]), [float(v) for v in d["bbox"]])
+            for d in detect_full(model, img, conf=FLOOR, imgsz=imgsz)
+            if d["class_id"] == 1
         ]
         for c in CONFS:
             kept = sorted([(cf, bx) for cf, bx in dets if cf >= c], key=lambda x: -x[0])
@@ -99,7 +102,7 @@ def main() -> None:
     stems = json.loads(SPLIT.read_text())["test"]
     runs = []
     for s in args.seeds:
-        w = DET / f"finetuned_s{s}" / "best.pt"
+        w = DET / f"finetuned_s{s}" / "best.safetensors"
         if w.exists():
             print(
                 f"[seed {s}] sweeping {w} over {len(stems)} test pages ...", flush=True

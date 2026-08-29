@@ -19,6 +19,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+from structflo.cser.inference.detector import detect_full, load_detector
 from structflo.cser.lps.matcher import LearnedMatcher
 from structflo.cser.pipeline.matcher import HungarianMatcher
 from structflo.cser.pipeline.models import Detection
@@ -46,12 +47,17 @@ def _key(b):
 
 
 def _match(matcher, dets, img, name):
-    return matcher.match(dets, image=img) if name != "Hungarian" else matcher.match(dets)
+    return (
+        matcher.match(dets, image=img) if name != "Hungarian" else matcher.match(dets)
+    )
 
 
 def part_a(matchers, gt_dir, img_dir):
     """GT-box matching: per-structure assignment accuracy + rejection."""
-    acc = {n: dict(lab=0, lab_ok=0, unlab=0, unlab_ok=0, npred=0, pred_ok=0) for n in matchers}
+    acc = {
+        n: dict(lab=0, lab_ok=0, unlab=0, unlab_ok=0, npred=0, pred_ok=0)
+        for n in matchers
+    }
     files = sorted(gt_dir.glob("*.json"))
     for gtf in files:
         entries = json.loads(gtf.read_text())
@@ -66,18 +72,29 @@ def part_a(matchers, gt_dir, img_dir):
         true_label = {}
         dets = []
         for e in entries:
-            dets.append(Detection.from_dict({"bbox": e["struct_bbox"], "conf": 1.0, "class_id": 0}))
+            dets.append(
+                Detection.from_dict(
+                    {"bbox": e["struct_bbox"], "conf": 1.0, "class_id": 0}
+                )
+            )
             true_label[_key(e["struct_bbox"])] = (
                 _key(e["label_bbox"]) if e.get("label_bbox") is not None else None
             )
             if e.get("label_bbox") is not None:
-                dets.append(Detection.from_dict({"bbox": e["label_bbox"], "conf": 1.0, "class_id": 1}))
+                dets.append(
+                    Detection.from_dict(
+                        {"bbox": e["label_bbox"], "conf": 1.0, "class_id": 1}
+                    )
+                )
         if not any(d.class_id == 1 for d in dets):
             continue
 
         for name, m in matchers.items():
             pairs = _match(m, dets, img, name)
-            matched = {_key(p.structure.bbox.as_list()): _key(p.label.bbox.as_list()) for p in pairs}
+            matched = {
+                _key(p.structure.bbox.as_list()): _key(p.label.bbox.as_list())
+                for p in pairs
+            }
             a = acc[name]
             a["npred"] += len(pairs)
             for sk, tl in true_label.items():
@@ -108,12 +125,18 @@ def part_b(matchers, model, gt_dir, img_dir, conf, imgsz):
         if not ip.exists():
             continue
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
-        res = model(img_rgb, conf=conf, imgsz=imgsz, verbose=False)[0]
         dets = []
-        for box in res.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-            dets.append(Detection.from_dict({"bbox": [float(x1), float(y1), float(x2), float(y2)],
-                                             "conf": float(box.conf[0]), "class_id": int(box.cls[0])}))
+        for d in detect_full(model, img_rgb, conf=conf, imgsz=imgsz):
+            x1, y1, x2, y2 = d["bbox"]
+            dets.append(
+                Detection.from_dict(
+                    {
+                        "bbox": [float(x1), float(y1), float(x2), float(y2)],
+                        "conf": float(d["conf"]),
+                        "class_id": int(d["class_id"]),
+                    }
+                )
+            )
         labelled = [e for e in entries if e.get("label_bbox") is not None]
         gt_pairs += len(labelled)
         img_l = np.array(Image.open(ip).convert("L"))
@@ -139,8 +162,15 @@ def part_b(matchers, model, gt_dir, img_dir, conf, imgsz):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data-dir", type=Path, default=Path("data/finetune/lps/real_test"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument(
+        "--data-dir", type=Path, default=Path("data/finetune/lps/real_test")
+    )
+    ap.add_argument(
+        "--detector",
+        type=Path,
+        default=None,
+        help="detector weights (.safetensors; default: latest published)",
+    )
     ap.add_argument("--lps", type=Path, default=Path("runs/lps_finetune/best.pt"))
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch/best.pt"))
     ap.add_argument("--conf", type=float, default=0.3)
@@ -166,7 +196,9 @@ def main():
         reject = s["unlab_ok"] / max(s["unlab"], 1)
         prec = s["pred_ok"] / max(s["npred"], 1)
         print(f"  {n:>11} | {assign:>10.1%} {reject:>8.1%} {prec:>10.1%}")
-    print(f"  (labelled structs={a['Hungarian']['lab']}, unlabelled={a['Hungarian']['unlab']})")
+    print(
+        f"  (labelled structs={a['Hungarian']['lab']}, unlabelled={a['Hungarian']['unlab']})"
+    )
 
     if args.skip_e2e:
         return
@@ -174,9 +206,7 @@ def main():
     print("=" * 64)
     print(f"PART B — end-to-end full@{args.imgsz} detection → pairing F1 (centroid)")
     print("=" * 64)
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=args.imgsz)
     stat, gt_pairs = part_b(matchers, model, gt_dir, img_dir, args.conf, args.imgsz)
     print(f"  GT pairs = {gt_pairs}")
     print(f"  {'matcher':>11} | {'P':>7} {'R':>7} {'F1':>7}")

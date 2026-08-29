@@ -1,4 +1,9 @@
-"""Prepare combined (synthetic + real) data directory for YOLO fine-tuning.
+"""Prepare combined (synthetic + real) data directory for fine-tuning the detector.
+
+The detector is now D-FINE (trained via ``sf-train``, see train.sh); this script
+keeps living in scripts/finetune/yolo/ for git-history continuity. What it writes
+is unchanged: symlinked ``images/`` + YOLO-txt ``labels/`` splits (``cls cx cy w h``,
+normalised) and YOLO-style data yamls, which ``sf-train`` reads directly.
 
 Three-way real split for a defensible paper number:
   train/       — synthetic subsample + oversampled real-train pages
@@ -7,7 +12,7 @@ Three-way real split for a defensible paper number:
                  and never used for model selection)
 
 Usage:
-    uv run python scripts/finetune/yolo/prepare_data.py
+    uv run python scripts/finetune/yolo/prepare_data.py --yes
 
 Adjust the knobs below for your run.
 """
@@ -95,6 +100,17 @@ def _write_yaml(path: Path, val_subdir: str) -> None:
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description=(__doc__ or "").strip().splitlines()[0],
+        epilog="DESTRUCTIVE: rebuilds the output directory and rewrites the split manifest. "
+        "Refuses to run without --yes (so `--help`/imports never touch data).",
+    )
+    ap.add_argument("--yes", action="store_true", help="really rebuild (deletes and recreates the output dir)")
+    if not ap.parse_args().yes:
+        ap.error("refusing to rebuild the fine-tune data without --yes")
+
     random.seed(SEED)
 
     # --- Discover data ---
@@ -175,7 +191,7 @@ def main() -> None:
     print(f"Real val (selection) : {len(real_val)} pages")
     print(f"Real test (report)   : {len(real_test)} pages")
 
-    # --- Write YAML configs ---
+    # --- Write YAML configs (YOLO-style data yaml, read by sf-train / evaluate) ---
     # Training validates on the real selection set (data.yaml is the train.sh default).
     _write_yaml(OUT_DIR / "data.yaml", "real_val/images")
     # Held-out real test set, used only for final reporting in eval_compare.py.

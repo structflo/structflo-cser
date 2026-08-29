@@ -17,6 +17,7 @@ import torch
 from PIL import Image
 from scipy.optimize import linear_sum_assignment
 
+from structflo.cser.inference.detector import detect_full, load_detector
 from structflo.cser.relmatch.features import node_features
 from structflo.cser.relmatch.model import load_checkpoint
 
@@ -49,30 +50,48 @@ def cache_pages(model_det, relmodel, gt_dir, img_dir, conf, imgsz, device):
         entries = json.loads(gtf.read_text())
         img_rgb = np.array(Image.open(ip).convert("L").convert("RGB"))
         page_h, page_w = img_rgb.shape[:2]
-        res = model_det(img_rgb, conf=conf, imgsz=imgsz, verbose=False)[0]
+        dets = detect_full(model_det, img_rgb, conf=conf, imgsz=imgsz)
         s_boxes, s_conf, l_boxes, l_conf = [], [], [], []
-        for box in res.boxes:
-            x1, y1, x2, y2 = (float(v) for v in box.xyxy[0].cpu().numpy())
-            if int(box.cls[0]) == 0:
+        for d in dets:
+            x1, y1, x2, y2 = (float(v) for v in d["bbox"])
+            if int(d["class_id"]) == 0:
                 s_boxes.append([x1, y1, x2, y2])
-                s_conf.append(float(box.conf[0]))
+                s_conf.append(float(d["conf"]))
             else:
                 l_boxes.append([x1, y1, x2, y2])
-                l_conf.append(float(box.conf[0]))
+                l_conf.append(float(d["conf"]))
         gt_pairs = sum(1 for e in entries if e.get("label_bbox") is not None)
         if not s_boxes or not l_boxes:
-            pages.append({"entries": entries, "Z": None, "s_boxes": s_boxes,
-                          "l_boxes": l_boxes, "gt_pairs": gt_pairs})
+            pages.append(
+                {
+                    "entries": entries,
+                    "Z": None,
+                    "s_boxes": s_boxes,
+                    "l_boxes": l_boxes,
+                    "gt_pairs": gt_pairs,
+                }
+            )
             continue
         boxes = s_boxes + l_boxes
         classes = [0] * len(s_boxes) + [1] * len(l_boxes)
         confs = s_conf + l_conf
-        nodes = torch.from_numpy(node_features(boxes, classes, confs, page_w, page_h)).to(device)
-        is_struct = torch.tensor([True] * len(s_boxes) + [False] * len(l_boxes), device=device)
+        nodes = torch.from_numpy(
+            node_features(boxes, classes, confs, page_w, page_h)
+        ).to(device)
+        is_struct = torch.tensor(
+            [True] * len(s_boxes) + [False] * len(l_boxes), device=device
+        )
         with torch.no_grad():
             Z = relmodel(nodes, is_struct).cpu().numpy()
-        pages.append({"entries": entries, "Z": Z, "s_boxes": s_boxes,
-                      "l_boxes": l_boxes, "gt_pairs": gt_pairs})
+        pages.append(
+            {
+                "entries": entries,
+                "Z": Z,
+                "s_boxes": s_boxes,
+                "l_boxes": l_boxes,
+                "gt_pairs": gt_pairs,
+            }
+        )
     return pages
 
 
@@ -112,27 +131,37 @@ def score(pages, margin):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", type=Path, default=Path("data/finetune/lps"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument(
+        "--detector",
+        type=Path,
+        default=None,
+        help="detector weights (.safetensors; default: latest published)",
+    )
     ap.add_argument("--relmatch", type=Path, default=Path("runs/relmatch_det/best.pt"))
     ap.add_argument("--conf", type=float, default=0.3)
     ap.add_argument("--imgsz", type=int, default=1280)
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    det = YOLO(str(args.detector))
+    det = load_detector(args.detector, imgsz=args.imgsz)
     relmodel, _ = load_checkpoint(args.relmatch, device=device)
 
     cache = {}
     for split in ("val", "real_test"):
         cache[split] = cache_pages(
-            det, relmodel, args.base / split / "ground_truth",
-            args.base / split / "images", args.conf, args.imgsz, device,
+            det,
+            relmodel,
+            args.base / split / "ground_truth",
+            args.base / split / "images",
+            args.conf,
+            args.imgsz,
+            device,
         )
 
     margins = [0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0]
-    print(f"{'margin':>7} | {'val P':>6} {'val R':>6} {'val F1':>6} | {'test P':>6} {'test R':>6} {'test F1':>7}")
+    print(
+        f"{'margin':>7} | {'val P':>6} {'val R':>6} {'val F1':>6} | {'test P':>6} {'test R':>6} {'test F1':>7}"
+    )
     print("-" * 60)
     best_m, best_vf = 0.0, -1.0
     rows = {}
@@ -142,10 +171,14 @@ def main():
         rows[m] = (tp, tr, tf)
         if vf > best_vf:
             best_vf, best_m = vf, m
-        print(f"{m:>7.1f} | {vp:>6.3f} {vr:>6.3f} {vf:>6.3f} | {tp:>6.3f} {tr:>6.3f} {tf:>7.3f}")
+        print(
+            f"{m:>7.1f} | {vp:>6.3f} {vr:>6.3f} {vf:>6.3f} | {tp:>6.3f} {tr:>6.3f} {tf:>7.3f}"
+        )
     tp, tr, tf = rows[best_m]
     print("-" * 60)
-    print(f"best margin by VAL F1 = {best_m}  →  REAL_TEST  P {tp:.3f}  R {tr:.3f}  F1 {tf:.3f}")
+    print(
+        f"best margin by VAL F1 = {best_m}  →  REAL_TEST  P {tp:.3f}  R {tr:.3f}  F1 {tf:.3f}"
+    )
 
 
 if __name__ == "__main__":

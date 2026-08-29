@@ -25,7 +25,7 @@ Usage
 >>> from structflo.cser.weights import resolve_weights
 >>> path = resolve_weights("cser-detector")                     # latest, auto-download
 >>> path = resolve_weights("cser-detector", version="v1.0")     # pin a version
->>> path = resolve_weights("cser-detector", version="/my.pt")   # local file, no download
+>>> path = resolve_weights("cser-detector", version="/my.safetensors")  # local file
 """
 
 from __future__ import annotations
@@ -92,6 +92,17 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "sha256": "6ec488e8a2263a8fcf6f8259dab622d66aea3c970d1b48b253f9ed860ae90e33",
             "requires": ">=0.4.0,<1.0.0",
         },
+        # v1.0 — first non-Ultralytics detector: D-FINE-L (transformers, Apache-2.0),
+        # clean-room retrain (synthetic pretrain → real fine-tune on data/finetune/plus),
+        # single-file safetensors. v0.1–v0.4 above are YOLO11l/ultralytics checkpoints
+        # (AGPL lineage) and are retired: loading them raises a clear error.
+        "v1.0": {
+            "repo_id": "sidxz/structflo-cser-detector",
+            "filename": "best.safetensors",
+            "revision": "weights-v1.0",
+            "sha256": "29962b7115159d93b6b6d3f16b96769a6ffc34e3590e6697687a8e3425ad0bc7",
+            "requires": ">=1.0.0,<2.0.0",
+        },
     },
     "cser-lps": {
         # Populate after first training run and HF Hub publish:
@@ -146,7 +157,7 @@ REGISTRY: dict[str, dict[str, dict]] = {
 # The version resolved when the caller does not specify one.
 # Keep in sync with REGISTRY — point to the newest entry per model.
 LATEST: dict[str, str | None] = {
-    "cser-detector": "v0.4",
+    "cser-detector": "v1.0",  # D-FINE; publish with scripts/publish_weights.py before release
     "cser-lps": "v0.3",  # set to "v1.0" after first publish
     "cser-relmatcher": "v0.2",
 }
@@ -174,7 +185,7 @@ def resolve_weights(
     model: str,
     version: str | Path | None = None,
 ) -> Path:
-    """Return a local path to a ``.pt`` weights file for *model*.
+    """Return a local path to a weights file (``.safetensors`` / ``.pt``) for *model*.
 
     Parameters
     ----------
@@ -193,7 +204,7 @@ def resolve_weights(
     Returns
     -------
     Path
-        Absolute path to the resolved ``.pt`` file.
+        Absolute path to the resolved weights file.
 
     Raises
     ------
@@ -215,7 +226,7 @@ def resolve_weights(
             return candidate
         # Looks like a path but doesn't exist on disk
         s = str(version)
-        if "/" in s or "\\" in s or s.endswith(".pt"):
+        if "/" in s or "\\" in s or s.endswith((".pt", ".safetensors")):
             raise WeightsNotFoundError(f"Weights file not found: {candidate}")
 
     # --- Case 2: version tag (or None → LATEST) -----------------------------
@@ -224,7 +235,7 @@ def resolve_weights(
     if tag is None:
         raise WeightsNotFoundError(
             f"No weights have been published yet for model '{model}'.  "
-            f"Pass an explicit local path:  version='/path/to/best.pt'"
+            f"Pass an explicit local path:  version='/path/to/best.safetensors'"
         )
 
     model_registry = REGISTRY[model]
@@ -300,7 +311,12 @@ def weight_info(model: str, version: str | Path | None = None) -> dict:
     # Explicit local path (existing file, or path-like that simply isn't on disk).
     if version is not None:
         s = str(version)
-        if Path(version).exists() or "/" in s or "\\" in s or s.endswith(".pt"):
+        if (
+            Path(version).exists()
+            or "/" in s
+            or "\\" in s
+            or s.endswith((".pt", ".safetensors"))
+        ):
             out["source"] = "local"
             out["version"] = s
             return out
@@ -339,6 +355,8 @@ def _check_compatibility(model: str, weights_version: str, requires: str) -> Non
         pkg_ver = Version(importlib.metadata.version("structflo-cser"))
     except importlib.metadata.PackageNotFoundError:
         return  # running from a source checkout — skip the check
+    if pkg_ver.is_devrelease:
+        return  # editable/source install (hatch-vcs X.Y.Z.devN) — skip the check
 
     if pkg_ver not in SpecifierSet(requires):
         raise WeightsCompatibilityError(

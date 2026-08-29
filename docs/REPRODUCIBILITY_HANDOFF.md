@@ -1,5 +1,14 @@
 # Reproducibility Handoff — Retrain matchers (≥3 seeds) & re-verify all paper numbers
 
+> **2026-08-28 — detector backend changed (branch `exp/agpl-free`).** The YOLO11l/ultralytics
+> detector (AGPL-3.0) was replaced by D-FINE via `transformers` (Apache-2.0) and PyMuPDF by
+> pypdfium2; see `docs/LICENSE_MIGRATION.md`. Every script referenced below now drives
+> `sf-train` (D-FINE) and the backend-neutral evaluator in `structflo.cser.inference.evaluate`;
+> detector checkpoints are `.safetensors`. Legacy ultralytics `.val()` numbers in this document
+> are NOT comparable with the new evaluator — the YOLO baselines were re-scored from frozen
+> prediction dumps in `runs/license_migration/eval/` (see the migration doc's baseline table).
+
+
 **Created:** 2026-06-01. **For:** a fresh session.
 **Goal:** Remove all weight-provenance ambiguity and establish **reproducible, multi-seed
 (≥3)** results for the structure–label matcher benchmark (and the detection/LPS numbers it

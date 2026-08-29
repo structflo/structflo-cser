@@ -21,7 +21,7 @@ done_marker() { [ -f "$1" ] && grep -q "$2" "$1" 2>/dev/null; }
 
 for S in $SEEDS; do
     banner "MATCHED SEED $S"
-    DET="$REPRO/detector/finetuned_s$S/best.pt"
+    DET="$REPRO/detector/finetuned_s$S/best.safetensors"
     CACHE="data/finetune/relmatch_det_matched_s$S"
     OUT="$REPRO/relmatch_det_matched_s$S"
 

@@ -31,7 +31,7 @@ _pipeline = None
 
 
 def get_pipeline():
-    """Lazy singleton — loading YOLO + DECIMER + EasyOCR takes ~30 s."""
+    """Lazy singleton — loading the detector + DECIMER + EasyOCR takes ~30 s."""
     global _pipeline
     if _pipeline is None:
         from structflo.cser.pipeline import ChemPipeline
@@ -73,20 +73,9 @@ def _open_pages(data: bytes, filename: str) -> tuple[int, Iterator[Image.Image]]
     if not filename.lower().endswith(".pdf"):
         return 1, iter([Image.open(io.BytesIO(data)).convert("RGB")])
 
-    import fitz  # pymupdf
+    from structflo.cser.pdf import open_pages
 
-    doc = fitz.open(stream=data, filetype="pdf")
-    mat = fitz.Matrix(DPI / 72, DPI / 72)
-
-    def pages() -> Iterator[Image.Image]:
-        try:
-            for page in doc:
-                pix = page.get_pixmap(matrix=mat, colorspace=fitz.csRGB)
-                yield Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
-        finally:
-            doc.close()
-
-    return doc.page_count, pages()
+    return open_pages(data, dpi=DPI)
 
 
 def _page_payload(index: int, img: Image.Image, pairs: list[CompoundPair]) -> dict:

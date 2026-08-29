@@ -22,19 +22,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from structflo.cser.inference.detector import detect_tiled
+from structflo.cser.inference.detector import detect_full, detect_tiled, load_detector
 from structflo.cser.inference.tiling import generate_tiles
-
-
-def detect_full_imgsz(model, img, conf, imgsz):
-    """Full-image inference at an explicit imgsz."""
-    results = model(img, conf=conf, imgsz=imgsz, verbose=False)[0]
-    out = []
-    for box in results.boxes:
-        x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
-        out.append({"bbox": [float(x1), float(y1), float(x2), float(y2)],
-                    "conf": float(box.conf[0]), "class_id": int(box.cls[0])})
-    return out
 
 
 def _iou(a, b):
@@ -58,15 +47,14 @@ def _best_iou(g, dets):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", type=Path, default=Path("data/finetune/lps/real_test"))
-    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/finetune_3way/weights/best.pt"))
+    ap.add_argument("--detector", type=Path, default=Path("runs/labels_detect/dfine_l_plus/weights/best.safetensors"),
+                    help="D-FINE .safetensors checkpoint (or a published version tag)")
     ap.add_argument("--floor", type=float, default=0.01, help="low conf floor for candidate capture")
     ap.add_argument("--tile-size", type=int, default=1536)
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
 
-    from ultralytics import YOLO
-
-    model = YOLO(str(args.detector))
+    model = load_detector(args.detector, imgsz=1280)
     gt_dir = args.data_dir / "ground_truth"
     img_dir = args.data_dir / "images"
 
@@ -108,9 +96,9 @@ def main():
         # detect once at floor per mode
         det = {
             "tiled": detect_tiled(model, img_np, tile_size=args.tile_size, conf=args.floor),
-            "full640": detect_full_imgsz(model, img_np, args.floor, 640),
-            "full1280": detect_full_imgsz(model, img_np, args.floor, 1280),
-            "full2048": detect_full_imgsz(model, img_np, args.floor, 2048),
+            "full640": detect_full(model, img_np, conf=args.floor, imgsz=640),
+            "full1280": detect_full(model, img_np, conf=args.floor, imgsz=1280),
+            "full2048": detect_full(model, img_np, conf=args.floor, imgsz=2048),
         }
 
         for mode in modes:

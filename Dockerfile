@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-# rdkit + opencv (via ultralytics/easyocr) need libGL and glib at runtime.
+# rdkit + opencv (via easyocr/decimer) need libGL and glib at runtime.
 # libxrender1/libxext6 are for rdkit.Chem.Draw, which webapp/server.py imports
 # lazily to re-render each extracted SMILES: without them the app boots clean and
 # then fails on the first page that actually finds a compound.
@@ -17,13 +17,13 @@ WORKDIR /app
 ARG VERSION=0.0.0
 ENV SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION
 
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README.md LICENSE THIRD_PARTY_NOTICES.md ./
 COPY structflo/ ./structflo/
 COPY annotate/ ./annotate/
 COPY webapp/ ./webapp/
 RUN pip install --no-cache-dir .
 
-# Every model this app uses is downloaded on first run: YOLO detector + LPS +
+# Every model this app uses is downloaded on first run: D-FINE detector + LPS +
 # relmatcher from HF Hub, DECIMER via pystow, EasyOCR's craft/english weights.
 # That is several GB, so point them all at one directory and mount it — a bare
 # container re-downloads the lot on every start.

@@ -23,26 +23,27 @@ from pathlib import Path
 REPRO = Path("runs/repro")
 DET = REPRO / "detector"
 
-# weight bundle path -> (source best.pt, provenance string)
+# weight bundle path -> (source checkpoint, provenance string)
+# Detector checkpoints are D-FINE .safetensors (provenance also embedded in their
+# metadata: data/init/seed/epoch); LPS / relmatch checkpoints are our own torch .pt files.
 SEEDS_DEFAULT = [42, 43, 44]
 
 
 def weight_map(seeds: list[int]) -> dict[str, tuple[Path, str]]:
     m: dict[str, tuple[Path, str]] = {}
     for s in seeds:
-        m[f"detector/base_synth_s{s}/best.pt"] = (
-            DET / f"base_synth_s{s}" / "best.pt",
-            f"sf-train --imgsz 2048 --batch 4 --epochs 30 --seed {s}  (data: config/data.yaml = data/generated, synthetic-only)"
+        m[f"detector/base_synth_s{s}/best.safetensors"] = (
+            DET / f"base_synth_s{s}" / "best.safetensors",
+            f"sf-train --data config/data.yaml --init ustc-community/dfine-large-coco --imgsz 1280 --batch 8 --epochs 10 --seed {s}  (data: config/data.yaml = data/generated, synthetic-only)"
             + (
-                "  [seed 42 == original yolo11l_panels; provenance via embedded train_args]"
+                "  [seed 42 == original dfine_l_synth; provenance via safetensors metadata]"
                 if s == 42
                 else ""
             ),
         )
-        m[f"detector/finetuned_s{s}/best.pt"] = (
-            DET / f"finetuned_s{s}" / "best.pt",
-            f"train.sh SEED={s} EPOCHS=25 imgsz=1280, warm-start base_synth_s{s}  (data: data/finetune/yolo = real+synth)"
-            + ("  [seed 42 == original finetune_3way]" if s == 42 else ""),
+        m[f"detector/finetuned_s{s}/best.safetensors"] = (
+            DET / f"finetuned_s{s}" / "best.safetensors",
+            f"sf-train --data data/finetune/yolo/data.yaml --init detector/base_synth_s{s} --imgsz 1280 --batch 8 --epochs 30 --lr 5e-5 --backbone-lr 5e-6 --seed {s}  (data: data/finetune/yolo = real+synth)",
         )
         m[f"lps/synth_s{s}/best.pt"] = (
             REPRO / f"lps_synth_s{s}" / "best.pt",
@@ -112,8 +113,8 @@ def main() -> None:
             continue
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-        # carry detector provenance sidecars if present
-        for side in ("results.csv", "args.yaml"):
+        # carry detector provenance sidecars if present (args.json = sf-train; args.yaml = legacy runs)
+        for side in ("results.csv", "args.json", "args.yaml"):
             if (src.parent / side).exists():
                 shutil.copy2(src.parent / side, dst.parent / side)
         manifest_files.append(
@@ -144,10 +145,14 @@ def main() -> None:
 
     # ---- scripts (copies of what was actually run) ----
     shutil.copytree("scripts/repro", out / "scripts" / "repro", dirs_exist_ok=True)
-    (out / "scripts" / "finetune_yolo").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(
-        "scripts/finetune/yolo/train.sh", out / "scripts" / "finetune_yolo" / "train.sh"
-    )
+    # Legacy detector fine-tune wrapper (the repro drivers now call `sf-train` directly);
+    # bundled only if it still exists.
+    if Path("scripts/finetune/yolo/train.sh").exists():
+        (out / "scripts" / "finetune_yolo").mkdir(parents=True, exist_ok=True)
+        shutil.copy2(
+            "scripts/finetune/yolo/train.sh",
+            out / "scripts" / "finetune_yolo" / "train.sh",
+        )
     shutil.copy2(
         "scripts/finetune/relmatch/eval_compare_all.py",
         out / "scripts" / "eval_compare_all.py",
@@ -301,7 +306,7 @@ Source commit: `{commit}`{" (dirty working tree)" if dirty else ""}. All eval @ 
 uv sync --dev
 # §A synthetic detection + matching (per seed, from this bundle's synth test set):
 uv run python scripts/eval_compare_all.py --src synthetic_data/generated_test/val \\
-    --manifest <all-stems-as-test.json> --detector weights/detector/base_synth_s42/best.pt \\
+    --manifest <all-stems-as-test.json> --detector weights/detector/base_synth_s42/best.safetensors \\
     --lps weights/lps/synth_s42/best.pt --relmatch weights/relmatch/synth_s42/best.pt \\
     --imgsz 1280 --conf 0.3
 # Retrain from scratch (matchers minutes; base detector hours/seed):  scripts/repro/run_train.sh
