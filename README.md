@@ -122,8 +122,8 @@ For finer control, each stage is exposed individually.
 ```python
 from structflo.cser.pipeline import ChemPipeline
 
-# Default: LearnedMatcher — auto-downloads LPS weights on first use
-pipeline = ChemPipeline(tile=False, conf=0.70)
+# Default: RelationalMatcher — detector and matcher weights auto-download on first use
+pipeline = ChemPipeline()  # full-image detection at 1280 px, conf 0.5
 ```
 
 For a heuristic based approach, use `HungarianMatcher`:
@@ -132,8 +132,6 @@ For a heuristic based approach, use `HungarianMatcher`:
 from structflo.cser.pipeline import ChemPipeline, HungarianMatcher
 
 pipeline = ChemPipeline(
-    tile=False,
-    conf=0.70,
     matcher=HungarianMatcher(max_distance=500),
 )
 ```
@@ -198,13 +196,27 @@ Pair 1:
 
 ## Matchers
 
-### Learned Pair Scorer — `LearnedMatcher` (default)
+### Relational matcher — `RelationalMatcher` (default)
+
+A geometry-only transformer over all detections on the page with Sinkhorn optimal transport and
+learnable "dustbins", so structures without a label are rejected rather than force-paired. Weights
+(`cser-relmatcher`) auto-download on first use.
+
+```python
+from structflo.cser.pipeline import ChemPipeline
+from structflo.cser.relmatch import RelationalMatcher
+
+pipeline = ChemPipeline(matcher=RelationalMatcher())
+```
+
+### Learned Pair Scorer — `LearnedMatcher`
 
 A neural matcher trained to score structure–label compatibility using both visual crops and geometric features. It replaces the raw distance cost matrix with a learned association probability, then solves global assignment with the Hungarian algorithm.
 
 Weights are auto-downloaded from HuggingFace Hub on first use — no manual setup needed. Models are hosted at:
 
 - Detector: [huggingface.co/sidxz/structflo-cser-detector](https://huggingface.co/sidxz/structflo-cser-detector)
+- Relational matcher: [huggingface.co/sidxz/structflo-cser-relmatcher](https://huggingface.co/sidxz/structflo-cser-relmatcher)
 - LPS scorer: [huggingface.co/sidxz/structflo-cser-lps](https://huggingface.co/sidxz/structflo-cser-lps)
 
 ```python
@@ -273,7 +285,7 @@ Run extraction directly from the terminal:
 
 ```bash
 # Detect and pair structures/labels in a directory of images
-sf-detect --image_dir data/test_images/ --conf 0.60 --no_tile --pair --max_dist 500
+sf-detect --image_dir data/test_images/ --pair --max_dist 500   # full-image detection; add --tile for very dense pages
 
 # Full pipeline: detect → match → SMILES + OCR
 sf-extract page.png
@@ -300,11 +312,47 @@ All available commands:
 | [01-quickstart.ipynb](notebooks/01-quickstart.ipynb) | Step-by-step pipeline walkthrough: detect → match → enrich, then one-call convenience API |
 | [02-LPS.ipynb](notebooks/02-LPS.ipynb) | Using the Learned Pair Scorer for improved matching on complex document pages |
 
+## Changelog
+
+### 1.0.0
+
+**New detector backend.** Detection now runs on a D-FINE-L transformer detector (HGNet-V2 backbone,
+`DFineForObjectDetection` from `transformers`) trained from scratch on the same synthetic corpus and
+annotated documents as before. On the held-out real test set detection mAP50 rises from 0.85 to 0.92
+(label mAP50 0.75 → 0.88) with end-to-end pairing F1 unchanged (0.82). Weights are published as
+`cser-detector` v1.0 (`best.safetensors`, auto-downloaded).
+
+- **PDF rendering** moved to [pypdfium2](https://pypdfium2.readthedocs.io/) (`structflo.cser.pdf`);
+  page pixel sizes are identical to the previous renderer, so stored coordinates remain valid.
+- **Robustness training**: the detector is fine-tuned with rasteriser/DPI jitter and a photometric
+  augmentation suite (dark backgrounds with light text, dark title bars and highlighted compound
+  cards, grey/tinted backgrounds, gradients, overlays) — pages with dark or coloured backgrounds now
+  detect at the same level as white pages.
+- **Operating point**: default detection confidence is now `conf=0.5` (was 0.3), tuned for the new
+  detector's score calibration.
+- **Full-image detection by default** in `sf-extract` and `sf-detect`; tiling is opt-in via `--tile`.
+- `LearnedMatcher` now pins its detector-confidence features to their training value
+  (`use_detector_conf=False`), which raises its end-to-end F1 and makes it detector-agnostic.
+- New training/evaluation tooling: `sf-train` (plain-PyTorch trainer with EMA, cosine schedule, bf16,
+  early stopping), a backend-neutral COCO-style evaluator (`structflo.cser.inference.metrics` /
+  `evaluate`), and `scripts/migration/` (prediction dumps, paired bootstrap, dark-page proxy suite).
+
+**Breaking changes**
+- Detector weights are single-file `.safetensors`; earlier `.pt` checkpoints (`cser-detector`
+  ≤ v0.4) cannot be loaded by this version. `cser-detector` v1.0 requires `structflo-cser >= 1.0.0`.
+- `ChemPipeline(conf=...)`, `sf-extract --conf` and `sf-detect --conf` default to 0.5.
+- `--no_tile` was removed from the CLIs (full-image is the default; use `--tile` to opt in).
+- `sf-train` has a new argument set (see `sf-train --help`); `scripts/finetune/*/train.sh` drive it.
+- Dependencies: `transformers`, `pypdfium2`, `safetensors`, `torch`, `torchvision`, `pyyaml` added;
+  `ultralytics`, `pymupdf`, `chembl-webresource-client` removed.
+
+### 0.4.x
+
+Real-data fine-tuned detector/LPS/relational weights (v0.4 / v0.3 / v0.2), per-page PDF API
+(`render_page`, `process_pdf_page`, `DEFAULT_DPI`), `pipeline.version` provenance snapshot, extraction
+web UI (`sf-web`).
+
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE). Every runtime dependency is permissively licensed
-(no GPL/AGPL code paths; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the LGPL/MPL
-components used unmodified and for model-weight attributions). PDF rendering uses pypdfium2
-(BSD-3) and detection uses D-FINE via `transformers` (Apache-2.0); the earlier Ultralytics
-YOLO (AGPL-3.0) and PyMuPDF (AGPL-3.0) dependencies were removed and the detector re-trained
-clean-room.
+Apache License 2.0 — see [LICENSE](LICENSE). Third-party components and model-weight attributions
+are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

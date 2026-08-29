@@ -9,7 +9,7 @@ Reported per matcher: point estimates, delta = B - A, percentile 95% CI of the d
 P(delta < 0), the bootstrap fraction in which B is worse than A.
 
 Usage:
-    uv run python scripts/license_migration/paired_bootstrap.py \\
+    uv run python scripts/migration/paired_bootstrap.py \\
         --a runs/license_migration/eval/dfine_l_plus_ms_conf0.4_e2e_test.json \\
         --b runs/license_migration/eval/yolo_v0.4_e2e_test.json \\
         [--metric f1|precision|recall] [--n-boot 10000] [--seed 0] [--out delta.json]

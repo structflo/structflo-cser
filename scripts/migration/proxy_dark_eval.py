@@ -6,7 +6,7 @@ luminance changes is measured on deterministic transformed copies of a real spli
 parameter-free Hungarian end-to-end pairing F1 per variant, for one checkpoint.
 
 Usage:
-    uv run python scripts/license_migration/proxy_dark_eval.py --weights <ckpt.safetensors> \
+    uv run python scripts/migration/proxy_dark_eval.py --weights <ckpt.safetensors> \
         --split real_test --conf 0.4 --out runs/license_migration/eval/proxy_<tag>.json
 """
 

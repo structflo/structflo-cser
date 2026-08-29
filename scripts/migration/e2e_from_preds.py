@@ -9,7 +9,7 @@ With --out, the JSON also carries ``per_page`` — the per-stem tp/npred per mat
 GT pair count that the aggregate numbers are summed from (for paired bootstraps).
 
 Usage:
-    uv run python scripts/license_migration/e2e_from_preds.py \
+    uv run python scripts/migration/e2e_from_preds.py \
         --preds runs/license_migration/preds/yolo_v0.4/real_test.json --split test
 """
 

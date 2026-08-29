@@ -204,7 +204,7 @@ Scripts live in `scripts/finetune/{yolo,lps}/`, each with `prepare_data.py`, `tr
   fine-tune `--init <ms> --lr 2e-5 --backbone-lr 2e-6 --downscale-aug 0.5 --photometric-aug 0.3 --photometric-mix v1 --val-variants invert --epochs 12`
   → `runs/labels_detect/dfine_l_plus_photo/weights/best.safetensors` = **cser-detector v1.0**
   (val = real_val, report on real_test; see docs/LICENSE_MIGRATION.md for the numbers)
-- Compare against the frozen YOLO v0.4 baseline with `scripts/license_migration/{dump_preds,eval_preds,e2e_from_preds}.py`
+- Compare against the frozen YOLO v0.4 baseline with `scripts/migration/{dump_preds,eval_preds,e2e_from_preds}.py`
 
 ### LPS fine-tune
 - Uses `sf-train-lps --finetune <checkpoint>` (loads weights only, fresh optimizer/scheduler)

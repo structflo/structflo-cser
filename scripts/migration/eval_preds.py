@@ -5,7 +5,7 @@ replacement, so the comparison is apples-to-apples (ultralytics' own mAP code is
 not used). Optional pycocotools cross-check with --cocoeval.
 
 Usage:
-    uv run python scripts/license_migration/eval_preds.py \
+    uv run python scripts/migration/eval_preds.py \
         --preds runs/license_migration/preds/yolo_v0.4/real_test.json \
         --labels data/finetune/yolo/real_test/labels --conf 0.3 [--cocoeval] [--out x.json]
 """

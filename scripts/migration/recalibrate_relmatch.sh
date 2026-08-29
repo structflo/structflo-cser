@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Re-cache detection boxes with the NEW detector and retrain the det-trained relational matcher
 # (its node feature 8 is the detector confidence and its dustbin prior was fitted to YOLO's FP/miss rates).
-#   bash scripts/license_migration/recalibrate_relmatch.sh <detector.safetensors> [conf=0.3] [seed=42]
+#   bash scripts/migration/recalibrate_relmatch.sh <detector.safetensors> [conf=0.3] [seed=42]
 set -uo pipefail
 cd "$(dirname "$0")/../.."
 W="$1"; CONF="${2:-0.3}"; SEED="${3:-42}"

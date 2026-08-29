@@ -34,7 +34,7 @@ fixture); everything else was offline tooling and docs.
 | Evaluation | ultralytics `.val()` everywhere (numbers not comparable across backends) | `inference/metrics.py` (dependency-free COCO-style AP, verified identical to pycocotools) + `inference/evaluate.py`; all baselines re-scored with it |
 | PDF | `pipeline.py:render_page/process_pdf`, `annotate/pdf.py`, `webapp/server.py`, `tests/test_page_api.py` | `structflo/cser/pdf.py` (`render_page`, `iter_pages`, `open_pages`, `pixel_size`), PDFium calls serialised with a lock (annotate runs a threaded Flask server; PDFium is not thread-safe) |
 | CLI defaults | `sf-extract`/`sf-detect` still defaulted to tiling (contradicting the pipeline default) | `--tile` is opt-in; full-image at 1280 is the default everywhere |
-| Offline scripts | 18 scripts under `scripts/finetune`, `scripts/repro` | ported to the seam (`load_detector`/`detect_full`/`evaluate_detector_on_yaml`); `scripts/license_migration/` holds the migration tooling |
+| Offline scripts | 18 scripts under `scripts/finetune`, `scripts/repro` | ported to the seam (`load_detector`/`detect_full`/`evaluate_detector_on_yaml`); `scripts/migration/` holds the migration tooling |
 | Deps | `ultralytics>=8.4.14`, `pymupdf>=1.27.1`, `chembl-webresource-client` | `transformers>=4.52.1` (tested 4.57.6 and 5.16.1), `pypdfium2>=5`, `safetensors`, explicit `torch`/`torchvision`/`pyyaml`; dev: `pycocotools` |
 
 ### PyMuPDF → pypdfium2: a real 1-px trap
@@ -54,7 +54,7 @@ detection-agreement F1 between the two renders with the same detector is **0.951
 * **Relational matcher (default in `ChemPipeline`)** — node feature 8 is the detector confidence
   and the published `cser-relmatcher` v0.2 was trained on YOLO v0.4's boxes/confidences at
   conf 0.3 (`data/finetune/relmatch_det_plus`). It must be re-cached and re-trained on the new
-  detector (`scripts/license_migration/recalibrate_relmatch.sh`). Its shipped default
+  detector (`scripts/migration/recalibrate_relmatch.sh`). Its shipped default
   `dustbin_margin=0.0` also differs from the paper's tuned 2.0 — re-swept on real_val.
 * **LPS** — features 12/13 are confidences, but the published scorer was trained on GT boxes with
   those features fixed at 1.0. Feeding live confidences was a train/serve mismatch: pinning them to
@@ -286,7 +286,7 @@ backgrounds, lightened ink, gamma, contrast, offset), 4. linear/radial gradients
 attenuation, non-inverting tinted cards / zebra rows, translucent overlays and rotated watermarks,
 and low-frequency texture in dark regions. Sampled scenarios compose them (`SCENARIOS`; the
 shipped checkpoint used the simpler `SCENARIOS_V1`, `--photometric-mix v1`). Robustness is measured
-on deterministic variants of real_test (`scripts/license_migration/proxy_dark_eval.py`): an
+on deterministic variants of real_test (`scripts/migration/proxy_dark_eval.py`): an
 in-distribution block (polarity / regional / luminance groups) and a **held-out block that differs
 in kind from training** (inversion + JPEG re-encode, low-contrast inversion, dimmed labels on dark,
 light inset panel, inversion + noise, non-GT-aligned grid inversion). A control run with identical

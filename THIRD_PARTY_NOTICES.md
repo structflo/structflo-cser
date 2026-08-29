@@ -5,7 +5,7 @@ downloads at runtime the following third-party software and model weights. This 
 components whose licences carry obligations beyond attribution, or which are worth knowing about
 when redistributing an environment or container image built from this package.
 
-## Removed in the AGPL-free migration (branch `exp/agpl-free`)
+## Components replaced in 1.0
 
 | Component | Licence | Replaced by |
 |---|---|---|
@@ -13,9 +13,8 @@ when redistributing an environment or container image built from this package.
 | `PyMuPDF` (`fitz`) | AGPL-3.0 / Artifex commercial | `pypdfium2` (BSD-3-Clause / Apache-2.0; bundles PDFium, BSD-3-Clause) |
 | `chembl-webresource-client` (unused import; pulled LGPL `easydict`) | Apache-2.0 (+ LGPL-3.0 dep) | removed |
 
-The published detector weights `cser-detector` v0.1–v0.4 were trained with Ultralytics software from
-Ultralytics' COCO checkpoint; Ultralytics' stated position is that AGPL-3.0 extends to such models.
-They are retired and must not be shipped with this package's permissive release.
+The detector weights `cser-detector` v0.1–v0.4 were produced with the previous (Ultralytics) stack and
+are not loadable by this version; `cser-detector` v1.0 was trained from scratch with the new stack.
 
 ## Runtime Python dependencies with notable terms
 

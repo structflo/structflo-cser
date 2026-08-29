@@ -1,7 +1,7 @@
 """Summarise runs/license_migration/eval/*.json into comparison tables (markdown).
 
 Usage:
-    uv run python scripts/license_migration/summarize.py [--tags yolo_v0.4 dfine_l_synth dfine_l_plus] [--out docs/x.md]
+    uv run python scripts/migration/summarize.py [--tags yolo_v0.4 dfine_l_synth dfine_l_plus] [--out docs/x.md]
 """
 
 from __future__ import annotations
