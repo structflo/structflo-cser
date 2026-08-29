@@ -132,7 +132,7 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "filename": "best.pt",
             "revision": "weights-v0.3",
             "sha256": "3c5914e8798e9195820eda92c87824c53fb05a81fff690828388416331eaa531",
-            "requires": ">=0.4.0,<1.0.0",
+            "requires": ">=0.4.0,<2.0.0",
         },
     },
     # Relational (set-to-set / Sinkhorn) matcher (det-trained variant).
@@ -149,7 +149,7 @@ REGISTRY: dict[str, dict[str, dict]] = {
             "filename": "best.pt",
             "revision": "weights-v0.2",
             "sha256": "2d48c42c3b0180889a57c94986f99a4cf391b27efd6c91e2816a9e5e7f839d28",
-            "requires": ">=0.4.0,<1.0.0",
+            "requires": ">=0.4.0,<2.0.0",
         },
     },
 }

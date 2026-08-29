@@ -314,6 +314,13 @@ All available commands:
 
 ## Changelog
 
+### 1.0.1
+
+- Fix: the weights registry entries for `cser-lps` v0.3 and `cser-relmatcher` v0.2 were pinned to
+  `structflo-cser <1.0.0`, so `ChemPipeline()` (default `RelationalMatcher`) raised
+  `WeightsCompatibilityError` on a fresh 1.0.0 install. Both now accept 1.x; a test guards that every
+  `LATEST` entry accepts the release version. **1.0.0 is broken for default usage — use 1.0.1.**
+
 ### 1.0.0
 
 **New detector backend.** Detection now runs on a D-FINE-L transformer detector (HGNet-V2 backbone,
