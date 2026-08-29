@@ -178,3 +178,23 @@ Did anything in the model architecture change?
 - [ ] Published with `publish_weights.py` (uploads + tags + patches `weights.py`)
 - [ ] `git add structflo/cser/weights.py && git commit` done
 - [ ] If arch changed: `pyproject.toml` version bumped and published to PyPI
+
+
+---
+
+## Release checklist (learned from 1.0.0)
+
+1. **Major version bump ⇒ re-open every `LATEST` entry's `requires`** in `structflo/cser/weights.py`,
+   not just the model you changed. `scripts/publish_weights.py` now refuses to publish when another
+   model's `LATEST` entry rejects the package version, and
+   `tests/test_weights_registry_consistency.py` fails on dev checkouts heading for an incompatible
+   release.
+2. Resolve **all three** models under the exact release version (no dev suffix):
+   `uv sync --reinstall-package structflo-cser` after tagging locally, then
+   `python -c "from structflo.cser.weights import resolve_weights; [resolve_weights(m) for m in ('cser-detector','cser-lps','cser-relmatcher')]"`.
+3. **Build and smoke the container before pushing the tag**:
+   `docker build --build-arg VERSION=X.Y.Z -t structflo-cser:X.Y.Z .` then run it with `--preload`
+   and POST a page to `/extract`; `--preload` constructs `ChemPipeline()` and resolves every default
+   weight, which is exactly where 1.0.0 failed.
+4. Only then `git push origin main && git push origin vX.Y.Z` (PyPI publish is tag-triggered and
+   cannot be undone — a broken release must be yanked manually on PyPI).

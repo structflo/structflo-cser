@@ -136,6 +136,36 @@ def upload(
     return sha
 
 
+def check_registry_consistency(
+    pkg_version: str, new_model: str, new_requires: str
+) -> list[str]:
+    """Every LATEST entry (plus the entry being published) must accept the package version.
+
+    A major version bump silently invalidates entries pinned ``<X.0.0`` — that is how 1.0.0 shipped
+    with a default matcher whose weights required ``<1.0.0``. Returns a list of problems.
+    """
+    from packaging.specifiers import SpecifierSet
+    from packaging.version import Version
+
+    import structflo.cser.weights as w
+
+    target = Version(Version(pkg_version).base_version)
+    problems = []
+    for model, tag in w.LATEST.items():
+        if tag is None or model == new_model:
+            continue
+        spec = SpecifierSet(w.REGISTRY[model][tag]["requires"])
+        if target not in spec:
+            problems.append(
+                f"{model}/{tag} requires structflo-cser{spec}, incompatible with {target}"
+            )
+    if target not in SpecifierSet(new_requires):
+        problems.append(
+            f"{new_model}/{'new'} requires {new_requires}, incompatible with {target}"
+        )
+    return problems
+
+
 # ---------------------------------------------------------------------------
 # Model card
 # ---------------------------------------------------------------------------
@@ -365,6 +395,11 @@ def main() -> None:
         "Defaults to current installed major: >=X.Y.Z,<(X+1).0.0",
     )
     p.add_argument(
+        "--allow-inconsistent-registry",
+        action="store_true",
+        help="publish even if another model's LATEST entry rejects this package version",
+    )
+    p.add_argument(
         "--no-card",
         action="store_true",
         help="Do not (re)upload the model card README.md to the HF repo.",
@@ -391,6 +426,18 @@ def main() -> None:
     # --- Resolve requires specifier -----------------------------------------
     pkg_ver = current_pkg_version()
     requires = args.requires or default_requires(pkg_ver)
+
+    # --- Registry consistency (all LATEST entries must accept this package version) ----------
+    problems = check_registry_consistency(pkg_ver, args.model, requires)
+    if problems:
+        print("REGISTRY INCONSISTENCY:")
+        for msg in problems:
+            print(f"  - {msg}")
+        if not args.allow_inconsistent_registry:
+            p.error(
+                "fix the `requires` of the entries above in structflo/cser/weights.py first "
+                "(or pass --allow-inconsistent-registry)"
+            )
 
     # --- Summary ------------------------------------------------------------
     repo_info = MODEL_REPOS[args.model]
